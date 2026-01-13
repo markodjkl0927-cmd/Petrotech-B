@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String
+  firstName String
+  lastName  String
+  phone     String?
+  role      UserRole  @default(CUSTOMER)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  addresses Address[]
+  orders    Order[]
+
+  @@map("users")
+}
+
+model Address {
+  id           String   @id @default(uuid())
+  userId       String
+  label        String
+  street       String
+  city         String
+  state        String?
+  zipCode      String
+  country      String   @default("US")
+  latitude     Float?
+  longitude    Float?
+  isDefault    Boolean  @default(false)
+  instructions String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders       Order[]
+
+  @@map("addresses")
+}
+
+model Product {
+  id            String      @id @default(uuid())
+  name          String
+  description   String?
+  pricePerLiter Float
+  unit          String      @default("liter")
+  isAvailable   Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  orderItems    OrderItem[]
+
+  @@map("products")
+}
+
+model Driver {
+  id            String   @id @default(uuid())
+  firstName     String
+  lastName      String
+  email         String   @unique
+  phone         String
+  licenseNumber String
+  vehicleType   String
+  vehicleNumber String
+  isAvailable   Boolean  @default(true)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orders        Order[]
+
+  @@map("drivers")
+}
+
+model Order {
+  id                 String        @id @default(uuid())
+  userId             String
+  addressId          String
+  driverId           String?
+  orderNumber        String        @unique
+  deliveryType       DeliveryType
+  status             OrderStatus   @default(PENDING)
+  paymentMethod      PaymentMethod
+  paymentStatus      PaymentStatus @default(PENDING)
+  totalAmount        Float
+  deliveryDate       DateTime?
+  deliveredAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  orderItems         OrderItem[]
+  address            Address       @relation(fields: [addressId], references: [id])
+  driver             Driver?       @relation(fields: [driverId], references: [id])
+  user               User          @relation(fields: [userId], references: [id])
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Float
+  price     Float
+  subtotal  Float
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  DRIVER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH_ON_DELIVERY
+  CARD_ON_DELIVERY
+}
+
+enum DeliveryType {
+  PRIVATE
+  COMMERCIAL
+}
