@@ -9,7 +9,7 @@ export const orderController = {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const { addressId, deliveryType, paymentMethod, deliveryDate, items, notes } = req.body;
+      const { addressId, deliveryType, paymentMethod, deliveryDate, items, notes, tip } = req.body;
 
       if (!addressId || !deliveryType || !paymentMethod || !items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({
@@ -27,6 +27,12 @@ export const orderController = {
         return res.status(400).json({ error: 'Invalid payment method' });
       }
 
+      // Validate tip (optional, must be non-negative if provided)
+      const tipAmount = tip ? parseFloat(tip) : 0;
+      if (tipAmount < 0) {
+        return res.status(400).json({ error: 'Tip must be a non-negative number' });
+      }
+
       const order = await orderService.createOrder({
         userId: req.user.userId,
         addressId,
@@ -35,6 +41,7 @@ export const orderController = {
         deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
         items,
         notes,
+        tip: tipAmount,
       });
 
       res.status(201).json({ order });

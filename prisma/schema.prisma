@@ -88,6 +88,12 @@ model Order {
   paymentMethod      PaymentMethod
   paymentStatus      PaymentStatus @default(PENDING)
   totalAmount        Float
+  fuelCost           Float         @default(0) // Total fuel cost (goes to gas company)
+  companyMarkup      Float          @default(0) // 0.095% markup on fuel (goes to company)
+  distance           Float?         // Distance in miles
+  deliveryFee        Float          @default(0) // Delivery fee based on distance (goes to company)
+  tax                Float          @default(0) // Tax amount (goes to customer/government)
+  tip                Float          @default(0) // Optional tip for driver
   deliveryDate       DateTime?
   deliveredAt        DateTime?
   cancelledAt        DateTime?

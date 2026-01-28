@@ -1,5 +1,12 @@
 import { prisma } from '../lib/prisma';
 import { OrderStatus, PaymentStatus, PaymentMethod, DeliveryType } from '@prisma/client';
+import {
+  calculateDistance,
+  COMPANY_LOCATION,
+  calculateDeliveryFee,
+  calculateCompanyMarkup,
+  calculateTax,
+} from '../lib/distance';
 
 export interface CreateOrderDto {
   userId: string;
@@ -12,11 +19,12 @@ export interface CreateOrderDto {
     quantity: number;
   }>;
   notes?: string;
+  tip?: number; // Optional tip for driver
 }
 
 export const orderService = {
   async createOrder(data: CreateOrderDto) {
-    const { userId, addressId, deliveryType, paymentMethod, deliveryDate, items, notes } = data;
+    const { userId, addressId, deliveryType, paymentMethod, deliveryDate, items, notes, tip = 0 } = data;
 
     // Verify address belongs to user
     const address = await prisma.address.findFirst({
@@ -27,8 +35,22 @@ export const orderService = {
       throw new Error('Address not found or does not belong to user');
     }
 
-    // Validate products and calculate total
-    let totalAmount = 0;
+    // Check if address has coordinates
+    if (!address.latitude || !address.longitude) {
+      throw new Error('Address must have valid coordinates for distance calculation');
+    }
+
+    // Calculate distance from company to delivery address
+    const distance = calculateDistance(
+      COMPANY_LOCATION.latitude,
+      COMPANY_LOCATION.longitude,
+      address.latitude,
+      address.longitude
+    );
+
+    // Validate products and calculate fuel cost (with hidden 0.095% markup included)
+    let fuelCost = 0;
+    let baseFuelCost = 0; // Base cost without markup (for company records)
     const orderItems = [];
 
     for (const item of items) {
@@ -52,16 +74,33 @@ export const orderService = {
         throw new Error('Maximum order quantity is 5000 liters');
       }
 
-      const subtotal = item.quantity * product.pricePerLiter;
-      totalAmount += subtotal;
+      // Base price per liter (what goes to gas company)
+      const basePricePerLiter = product.pricePerLiter;
+      // Price per liter with hidden 0.095% markup (what customer pays)
+      const priceWithMarkup = basePricePerLiter * 1.00095;
+      
+      const baseSubtotal = item.quantity * basePricePerLiter;
+      const subtotalWithMarkup = item.quantity * priceWithMarkup;
+      
+      baseFuelCost += baseSubtotal;
+      fuelCost += subtotalWithMarkup; // Fuel cost includes hidden markup
 
       orderItems.push({
         productId: product.id,
         quantity: item.quantity,
-        price: product.pricePerLiter,
-        subtotal,
+        price: priceWithMarkup, // Store price with markup
+        subtotal: subtotalWithMarkup, // Store subtotal with markup
       });
     }
+
+    // Calculate company markup (0.095% of base fuel cost) - for company records only
+    const companyMarkup = calculateCompanyMarkup(baseFuelCost);
+    
+    // Calculate pricing breakdown
+    const deliveryFee = calculateDeliveryFee(distance);
+    const subtotalForTax = fuelCost + deliveryFee; // Tax on fuel cost (with markup) + delivery
+    const tax = calculateTax(subtotalForTax, address.state || undefined);
+    const totalAmount = fuelCost + deliveryFee + tax + tip;
 
     // Generate order number
     const orderNumber = `PT-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
@@ -77,7 +116,13 @@ export const orderService = {
         paymentMethod,
         paymentStatus: PaymentStatus.PENDING, // Always start as PENDING, will be updated after payment confirmation
         status: OrderStatus.PENDING,
-        totalAmount,
+        totalAmount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
+        fuelCost: Math.round(fuelCost * 100) / 100, // Includes hidden 0.095% markup
+        companyMarkup: Math.round(companyMarkup * 100) / 100, // For company records (hidden from customer)
+        distance: Math.round(distance * 100) / 100,
+        deliveryFee: Math.round(deliveryFee * 100) / 100,
+        tax: Math.round(tax * 100) / 100,
+        tip: Math.round(tip * 100) / 100,
         deliveryDate,
         notes,
         orderItems: {

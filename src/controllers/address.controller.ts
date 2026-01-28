@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { geocodeAddress } from '../lib/geocoding';
+import { calculateDistance, COMPANY_LOCATION, calculateDeliveryFee } from '../lib/distance';
 
 export const addressController = {
   async getAll(req: Request, res: Response) {
@@ -69,6 +71,18 @@ export const addressController = {
         });
       }
 
+      // Geocode address if coordinates not provided
+      let finalLatitude = latitude ? parseFloat(latitude) : null;
+      let finalLongitude = longitude ? parseFloat(longitude) : null;
+
+      if (!finalLatitude || !finalLongitude) {
+        const geocoded = await geocodeAddress(street, city, state, zipCode, country || 'US');
+        if (geocoded) {
+          finalLatitude = geocoded.latitude;
+          finalLongitude = geocoded.longitude;
+        }
+      }
+
       const address = await prisma.address.create({
         data: {
           userId: req.user.userId,
@@ -78,8 +92,8 @@ export const addressController = {
           state,
           zipCode,
           country: country || 'US',
-          latitude: latitude ? parseFloat(latitude) : null,
-          longitude: longitude ? parseFloat(longitude) : null,
+          latitude: finalLatitude,
+          longitude: finalLongitude,
           instructions,
           isDefault: isDefault || false,
         },
@@ -120,6 +134,24 @@ export const addressController = {
         });
       }
 
+      // Geocode address if coordinates not provided and address changed
+      let finalLatitude = latitude ? parseFloat(latitude) : existingAddress.latitude;
+      let finalLongitude = longitude ? parseFloat(longitude) : existingAddress.longitude;
+
+      const addressChanged = 
+        street !== existingAddress.street ||
+        city !== existingAddress.city ||
+        state !== existingAddress.state ||
+        zipCode !== existingAddress.zipCode;
+
+      if ((!finalLatitude || !finalLongitude) && addressChanged) {
+        const geocoded = await geocodeAddress(street, city, state, zipCode, country || existingAddress.country);
+        if (geocoded) {
+          finalLatitude = geocoded.latitude;
+          finalLongitude = geocoded.longitude;
+        }
+      }
+
       const address = await prisma.address.update({
         where: { id },
         data: {
@@ -129,8 +161,8 @@ export const addressController = {
           state,
           zipCode,
           country,
-          latitude: latitude ? parseFloat(latitude) : undefined,
-          longitude: longitude ? parseFloat(longitude) : undefined,
+          latitude: finalLatitude,
+          longitude: finalLongitude,
           instructions,
           isDefault: isDefault !== undefined ? isDefault : existingAddress.isDefault,
         },
@@ -207,6 +239,77 @@ export const addressController = {
       res.json({ address: updatedAddress });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to set default address' });
+    }
+  },
+
+  async calculateDistance(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+
+      // Check if address belongs to user
+      const address = await prisma.address.findFirst({
+        where: {
+          id,
+          userId: req.user.userId,
+        },
+      });
+
+      if (!address) {
+        return res.status(404).json({ error: 'Address not found' });
+      }
+
+      // Check if address has coordinates
+      if (!address.latitude || !address.longitude) {
+        // Try to geocode the address
+        const geocoded = await geocodeAddress(
+          address.street,
+          address.city,
+          address.state || undefined,
+          address.zipCode,
+          address.country
+        );
+
+        if (!geocoded) {
+          return res.status(400).json({ 
+            error: 'Unable to calculate distance. Address coordinates are missing and geocoding failed.' 
+          });
+        }
+
+        // Update address with geocoded coordinates
+        await prisma.address.update({
+          where: { id: address.id },
+          data: {
+            latitude: geocoded.latitude,
+            longitude: geocoded.longitude,
+          },
+        });
+
+        address.latitude = geocoded.latitude;
+        address.longitude = geocoded.longitude;
+      }
+
+      // Calculate distance
+      const distance = calculateDistance(
+        COMPANY_LOCATION.latitude,
+        COMPANY_LOCATION.longitude,
+        address.latitude!,
+        address.longitude!
+      );
+
+      // Calculate delivery fee
+      const deliveryFee = calculateDeliveryFee(distance);
+
+      res.json({
+        distance: Math.round(distance * 100) / 100, // Round to 2 decimal places
+        deliveryFee: Math.round(deliveryFee * 100) / 100,
+        companyLocation: COMPANY_LOCATION,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to calculate distance' });
     }
   },
 };
