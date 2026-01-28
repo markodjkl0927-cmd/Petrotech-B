@@ -187,9 +187,9 @@ export const orderService = {
   },
 
   async getOrderById(orderId: string, userId?: string, isAdmin: boolean = false) {
-    const where = { id: orderId };
+    const where: { id: string; userId?: string } = { id: orderId };
 
-    if (!isAdmin) {
+    if (!isAdmin && userId) {
       where.userId = userId;
     }
 
