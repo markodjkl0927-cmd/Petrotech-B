@@ -16,7 +16,7 @@ export const adminController = {
       const status = req.query.status as OrderStatus | undefined;
       const skip = (page - 1) * limit;
 
-      const where: any = {};
+      const where: Record<string, any> = {};
       if (status) {
         where.status = status;
       }

@@ -26,7 +26,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
       throw new Error('JWT_SECRET is not configured');
     }
 
-    const decoded = jwt.verify(token, secret) as JwtPayload;
+    const decoded = jwt.verify(token, secret as string) as JwtPayload;
     req.user = decoded;
     next();
   } catch (error) {

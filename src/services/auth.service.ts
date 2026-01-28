@@ -62,8 +62,8 @@ export const authService = {
     // Generate token
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      JWT_SECRET as string,
+      { expiresIn: JWT_EXPIRES_IN as string | number }
     );
 
     return {
@@ -105,8 +105,8 @@ export const authService = {
     // Generate token
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      JWT_SECRET as string,
+      { expiresIn: JWT_EXPIRES_IN as string | number }
     );
 
     return {
