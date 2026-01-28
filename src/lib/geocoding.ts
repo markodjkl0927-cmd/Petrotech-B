@@ -49,9 +49,9 @@ export async function geocodeAddress(
       return null;
     }
 
-    const data = await response.json();
+    const data = await response.json() as Array<{ lat: string; lon: string }>;
 
-    if (!data || data.length === 0) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
       console.error('No geocoding results found for address:', addressString);
       return null;
     }
