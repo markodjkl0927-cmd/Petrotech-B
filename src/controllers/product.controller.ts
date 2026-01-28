@@ -92,5 +92,33 @@ export const productController = {
       res.status(500).json({ error: error.message || 'Failed to update product' });
     }
   },
+
+  async delete(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+
+      // Check if product exists
+      const product = await prisma.product.findUnique({
+        where: { id },
+      });
+
+      if (!product) {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
+      // Delete the product
+      await prisma.product.delete({
+        where: { id },
+      });
+
+      res.json({ message: 'Product deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to delete product' });
+    }
+  },
 };
 

@@ -67,6 +67,7 @@ export const orderService = {
     const orderNumber = `PT-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
 
     // Create order
+    // For ONLINE payments, set status to PENDING until Stripe payment is confirmed
     const order = await prisma.order.create({
       data: {
         userId,
@@ -74,7 +75,7 @@ export const orderService = {
         orderNumber,
         deliveryType,
         paymentMethod,
-        paymentStatus: paymentMethod === PaymentMethod.ONLINE ? PaymentStatus.PAID : PaymentStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING, // Always start as PENDING, will be updated after payment confirmation
         status: OrderStatus.PENDING,
         totalAmount,
         deliveryDate,

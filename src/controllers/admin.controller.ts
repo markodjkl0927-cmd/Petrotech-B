@@ -360,6 +360,49 @@ export const adminController = {
     }
   },
 
+  // Delete driver
+  async deleteDriver(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+
+      // Check if driver exists
+      const driver = await prisma.driver.findUnique({
+        where: { id },
+        include: {
+          orders: {
+            where: {
+              status: {
+                in: ['PENDING', 'CONFIRMED', 'DISPATCHED', 'IN_TRANSIT'],
+              },
+            },
+          },
+        },
+      });
+
+      if (!driver) {
+        return res.status(404).json({ error: 'Driver not found' });
+      }
+
+      // Check if driver has active orders
+      if (driver.orders.length > 0) {
+        return res.status(400).json({ error: 'Cannot delete driver with active orders' });
+      }
+
+      // Delete the driver
+      await prisma.driver.delete({
+        where: { id },
+      });
+
+      res.json({ message: 'Driver deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to delete driver' });
+    }
+  },
+
   // Get all customers
   async getAllCustomers(req: Request, res: Response) {
     try {
@@ -408,6 +451,104 @@ export const adminController = {
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to fetch customers' });
+    }
+  },
+
+  // Update customer
+  async updateCustomer(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+      const { firstName, lastName, email, phone, isActive } = req.body;
+
+      // Check if customer exists
+      const existingCustomer = await prisma.user.findUnique({
+        where: { id },
+      });
+
+      if (!existingCustomer || existingCustomer.role !== 'CUSTOMER') {
+        return res.status(404).json({ error: 'Customer not found' });
+      }
+
+      // If email is being changed, check if new email is already taken
+      if (email && email !== existingCustomer.email) {
+        const emailExists = await prisma.user.findUnique({
+          where: { email: email.toLowerCase() },
+        });
+        if (emailExists) {
+          return res.status(400).json({ error: 'Email already in use' });
+        }
+      }
+
+      const customer = await prisma.user.update({
+        where: { id },
+        data: {
+          firstName,
+          lastName,
+          email: email ? email.toLowerCase() : undefined,
+          phone,
+          isActive,
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          isActive: true,
+          createdAt: true,
+        },
+      });
+
+      res.json({ customer });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to update customer' });
+    }
+  },
+
+  // Delete customer
+  async deleteCustomer(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+
+      // Check if customer exists
+      const customer = await prisma.user.findUnique({
+        where: { id },
+        include: {
+          orders: {
+            where: {
+              status: {
+                in: ['PENDING', 'CONFIRMED', 'DISPATCHED', 'IN_TRANSIT'],
+              },
+            },
+          },
+        },
+      });
+
+      if (!customer || customer.role !== 'CUSTOMER') {
+        return res.status(404).json({ error: 'Customer not found' });
+      }
+
+      // Check if customer has active orders
+      if (customer.orders.length > 0) {
+        return res.status(400).json({ error: 'Cannot delete customer with active orders' });
+      }
+
+      // Delete the customer (cascade will handle addresses)
+      await prisma.user.delete({
+        where: { id },
+      });
+
+      res.json({ message: 'Customer deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to delete customer' });
     }
   },
 
