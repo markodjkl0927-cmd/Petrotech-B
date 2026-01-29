@@ -6,6 +6,8 @@ import addressRoutes from './address.routes';
 import orderRoutes from './order.routes';
 import adminRoutes from './admin.routes';
 import paymentRoutes from './payment.routes';
+import chargingRoutes from './charging.routes';
+import carRoutes from './car.routes';
 
 const router = Router();
 
@@ -16,6 +18,8 @@ router.use('/addresses', addressRoutes);
 router.use('/orders', orderRoutes);
 router.use('/admin', adminRoutes);
 router.use('/payments', paymentRoutes);
+router.use('/charging', chargingRoutes);
+router.use('/cars', carRoutes);
 
 export default router;
 

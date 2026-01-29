@@ -8,39 +8,42 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String
-  firstName String
-  lastName  String
-  phone     String?
-  role      UserRole  @default(CUSTOMER)
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  addresses Address[]
-  orders    Order[]
+  id             String         @id @default(uuid())
+  email          String         @unique
+  password       String
+  firstName      String
+  lastName       String
+  phone          String?
+  role           UserRole       @default(CUSTOMER)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  addresses      Address[]
+  orders         Order[]
+  chargingOrders ChargingOrder[]
+  cars           Car[]
 
   @@map("users")
 }
 
 model Address {
-  id           String   @id @default(uuid())
-  userId       String
-  label        String
-  street       String
-  city         String
-  state        String?
-  zipCode      String
-  country      String   @default("US")
-  latitude     Float?
-  longitude    Float?
-  isDefault    Boolean  @default(false)
-  instructions String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders       Order[]
+  id             String         @id @default(uuid())
+  userId         String
+  label          String
+  street         String
+  city           String
+  state          String?
+  zipCode        String
+  country        String         @default("US")
+  latitude       Float?
+  longitude      Float?
+  isDefault      Boolean        @default(false)
+  instructions   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders         Order[]
+  chargingOrders ChargingOrder[]
 
   @@map("addresses")
 }
@@ -60,19 +63,20 @@ model Product {
 }
 
 model Driver {
-  id            String   @id @default(uuid())
-  firstName     String
-  lastName      String
-  email         String   @unique
-  phone         String
-  licenseNumber String
-  vehicleType   String
-  vehicleNumber String
-  isAvailable   Boolean  @default(true)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  orders        Order[]
+  id             String         @id @default(uuid())
+  firstName      String
+  lastName       String
+  email          String         @unique
+  phone          String
+  licenseNumber  String
+  vehicleType    String
+  vehicleNumber  String
+  isAvailable    Boolean        @default(true)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  orders         Order[]
+  chargingOrders ChargingOrder[]
 
   @@map("drivers")
 }
@@ -154,4 +158,102 @@ enum PaymentMethod {
 enum DeliveryType {
   PRIVATE
   COMMERCIAL
+}
+
+model Car {
+  id            String         @id @default(uuid())
+  userId        String
+  make          String         // e.g., "Tesla", "Ford"
+  model         String         // e.g., "Model 3", "Mustang Mach-E"
+  year          Int?
+  connectorType String         // "CCS", "CHAdeMO", "Tesla", "Type 2"
+  batteryCapacity Float?       // kWh
+  licensePlate  String?
+  color         String?
+  nickname      String?        // User-friendly name
+  isDefault     Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chargingOrderCars ChargingOrderCar[]
+
+  @@map("cars")
+}
+
+model ChargingUnit {
+  id            String         @id @default(uuid())
+  name          String         // e.g., "Mobile Charger #1"
+  type          String         // "Level 2" or "DC Fast"
+  connectorType String         // "CCS", "CHAdeMO", "Tesla", "Universal"
+  maxPower      Float          // kW rating
+  isAvailable   Boolean        @default(true)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  chargingOrders ChargingOrder[]
+
+  @@map("charging_units")
+}
+
+model ChargingOrder {
+  id              String            @id @default(uuid())
+  userId          String
+  addressId       String
+  driverId        String?
+  chargingUnitId  String?
+  orderNumber     String            @unique
+  chargingDuration ChargingDuration // 1 hour, 2 hours, 5 hours, 24 hours
+  numberOfCars    Int               @default(1) // Number of cars to charge
+  baseFee         Float             @default(0) // Base fee for selected duration
+  deliveryFee     Float             @default(0) // Distance-based delivery fee
+  distance        Float             @default(0) // Distance in miles
+  tax              Float            @default(0)
+  tip              Float            @default(0)
+  totalAmount      Float
+  status           ChargingOrderStatus @default(PENDING)
+  paymentMethod    PaymentMethod
+  paymentStatus    PaymentStatus   @default(PENDING)
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  cancellationReason String?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  user             User            @relation(fields: [userId], references: [id])
+  address          Address         @relation(fields: [addressId], references: [id])
+  driver           Driver?         @relation(fields: [driverId], references: [id])
+  chargingUnit     ChargingUnit?   @relation(fields: [chargingUnitId], references: [id])
+  cars             ChargingOrderCar[]
+
+  @@map("charging_orders")
+}
+
+model ChargingOrderCar {
+  id              String         @id @default(uuid())
+  chargingOrderId String
+  carId           String
+  createdAt       DateTime       @default(now())
+  chargingOrder   ChargingOrder  @relation(fields: [chargingOrderId], references: [id], onDelete: Cascade)
+  car             Car            @relation(fields: [carId], references: [id])
+
+  @@unique([chargingOrderId, carId])
+  @@map("charging_order_cars")
+}
+
+enum ChargingOrderStatus {
+  PENDING
+  CONFIRMED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ChargingDuration {
+  ONE_HOUR
+  TWO_HOURS
+  FIVE_HOURS
+  TWENTY_FOUR_HOURS
 }
