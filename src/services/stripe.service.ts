@@ -2,19 +2,25 @@ import Stripe from 'stripe';
 import { prisma } from '../lib/prisma';
 import { PaymentStatus } from '@prisma/client';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
+// Initialize Stripe only if secret key is provided
+let stripe: Stripe | null = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2025-12-15.clover',
+  });
+} else {
+  console.warn('⚠️  STRIPE_SECRET_KEY is not set. Payment features will be disabled.');
 }
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2025-12-15.clover',
-});
 
 export const stripeService = {
   /**
    * Create a payment intent for an order
    */
   async createPaymentIntent(orderId: string, amount: number, currency: string = 'usd') {
+    if (!stripe) {
+      throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.');
+    }
+    
     try {
       // Verify order exists and is pending payment
       const order = await prisma.order.findUnique({
@@ -63,6 +69,10 @@ export const stripeService = {
    * Confirm payment and update order status
    */
   async confirmPayment(paymentIntentId: string) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.');
+    }
+    
     try {
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
@@ -112,6 +122,10 @@ export const stripeService = {
    * Handle Stripe webhook events
    */
   async handleWebhook(event: Stripe.Event) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.');
+    }
+    
     try {
       switch (event.type) {
         case 'payment_intent.succeeded':
@@ -153,6 +167,10 @@ export const stripeService = {
    * Create a refund for an order
    */
   async createRefund(paymentIntentId: string, amount?: number) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.');
+    }
+    
     try {
       const refundParams: Stripe.RefundCreateParams = {
         payment_intent: paymentIntentId,
