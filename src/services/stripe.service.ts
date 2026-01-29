@@ -2,6 +2,12 @@ import Stripe from 'stripe';
 import { prisma } from '../lib/prisma';
 import { PaymentStatus } from '@prisma/client';
 
+type PaymentOrderType = 'fuel' | 'charging';
+
+function normalizeOrderType(value: unknown): PaymentOrderType {
+  return value === 'charging' ? 'charging' : 'fuel';
+}
+
 // Initialize Stripe only if secret key is provided
 let stripe: Stripe | null = null;
 if (process.env.STRIPE_SECRET_KEY) {
@@ -16,17 +22,29 @@ export const stripeService = {
   /**
    * Create a payment intent for an order
    */
-  async createPaymentIntent(orderId: string, amount: number, currency: string = 'usd') {
+  async createPaymentIntent(
+    orderId: string,
+    amount: number,
+    currency: string = 'usd',
+    orderType: PaymentOrderType = 'fuel'
+  ) {
     if (!stripe) {
       throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.');
     }
     
     try {
       // Verify order exists and is pending payment
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        include: { user: true },
-      });
+      const normalizedType = normalizeOrderType(orderType);
+      const order =
+        normalizedType === 'charging'
+          ? await prisma.chargingOrder.findUnique({
+              where: { id: orderId },
+              include: { user: true },
+            })
+          : await prisma.order.findUnique({
+              where: { id: orderId },
+              include: { user: true },
+            });
 
       if (!order) {
         throw new Error('Order not found');
@@ -47,8 +65,12 @@ export const stripeService = {
           orderId: order.id,
           orderNumber: order.orderNumber,
           userId: order.userId,
+          orderType: normalizedType,
         },
-        description: `Petrotech Order ${order.orderNumber}`,
+        description:
+          normalizedType === 'charging'
+            ? `Petrotech EV Charging ${order.orderNumber}`
+            : `Petrotech Order ${order.orderNumber}`,
       });
 
       // Store payment intent ID in order (you might want to add a paymentIntentId field to Order model)
@@ -81,15 +103,21 @@ export const stripeService = {
       }
 
       const orderId = paymentIntent.metadata.orderId;
+      const orderType = normalizeOrderType(paymentIntent.metadata.orderType);
 
       // Update order payment status
       if (paymentIntent.status === 'succeeded') {
-        await prisma.order.update({
-          where: { id: orderId },
-          data: {
-            paymentStatus: PaymentStatus.PAID,
-          },
-        });
+        if (orderType === 'charging') {
+          await prisma.chargingOrder.update({
+            where: { id: orderId },
+            data: { paymentStatus: PaymentStatus.PAID },
+          });
+        } else {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { paymentStatus: PaymentStatus.PAID },
+          });
+        }
 
         return {
           success: true,
@@ -98,12 +126,17 @@ export const stripeService = {
         };
       } else {
         // Payment failed or requires action
-        await prisma.order.update({
-          where: { id: orderId },
-          data: {
-            paymentStatus: PaymentStatus.FAILED,
-          },
-        });
+        if (orderType === 'charging') {
+          await prisma.chargingOrder.update({
+            where: { id: orderId },
+            data: { paymentStatus: PaymentStatus.FAILED },
+          });
+        } else {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { paymentStatus: PaymentStatus.FAILED },
+          });
+        }
 
         return {
           success: false,
@@ -131,24 +164,36 @@ export const stripeService = {
         case 'payment_intent.succeeded':
           const paymentIntent = event.data.object as Stripe.PaymentIntent;
           if (paymentIntent.metadata.orderId) {
-            await prisma.order.update({
-              where: { id: paymentIntent.metadata.orderId },
-              data: {
-                paymentStatus: PaymentStatus.PAID,
-              },
-            });
+            const orderType = normalizeOrderType(paymentIntent.metadata.orderType);
+            if (orderType === 'charging') {
+              await prisma.chargingOrder.update({
+                where: { id: paymentIntent.metadata.orderId },
+                data: { paymentStatus: PaymentStatus.PAID },
+              });
+            } else {
+              await prisma.order.update({
+                where: { id: paymentIntent.metadata.orderId },
+                data: { paymentStatus: PaymentStatus.PAID },
+              });
+            }
           }
           break;
 
         case 'payment_intent.payment_failed':
           const failedPayment = event.data.object as Stripe.PaymentIntent;
           if (failedPayment.metadata.orderId) {
-            await prisma.order.update({
-              where: { id: failedPayment.metadata.orderId },
-              data: {
-                paymentStatus: PaymentStatus.FAILED,
-              },
-            });
+            const orderType = normalizeOrderType(failedPayment.metadata.orderType);
+            if (orderType === 'charging') {
+              await prisma.chargingOrder.update({
+                where: { id: failedPayment.metadata.orderId },
+                data: { paymentStatus: PaymentStatus.FAILED },
+              });
+            } else {
+              await prisma.order.update({
+                where: { id: failedPayment.metadata.orderId },
+                data: { paymentStatus: PaymentStatus.FAILED },
+              });
+            }
           }
           break;
 
@@ -187,18 +232,33 @@ export const stripeService = {
       if (refund.status === 'succeeded') {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         if (paymentIntent.metadata.orderId) {
-          const order = await prisma.order.findUnique({
-            where: { id: paymentIntent.metadata.orderId },
-          });
+          const orderType = normalizeOrderType(paymentIntent.metadata.orderType);
+          const order =
+            orderType === 'charging'
+              ? await prisma.chargingOrder.findUnique({
+                  where: { id: paymentIntent.metadata.orderId },
+                })
+              : await prisma.order.findUnique({
+                  where: { id: paymentIntent.metadata.orderId },
+                });
 
           if (order) {
             const isFullRefund = !amount || amount >= order.totalAmount;
-            await prisma.order.update({
-              where: { id: paymentIntent.metadata.orderId },
-              data: {
-                paymentStatus: isFullRefund ? PaymentStatus.REFUNDED : PaymentStatus.PAID,
-              },
-            });
+            if (orderType === 'charging') {
+              await prisma.chargingOrder.update({
+                where: { id: paymentIntent.metadata.orderId },
+                data: {
+                  paymentStatus: isFullRefund ? PaymentStatus.REFUNDED : PaymentStatus.PAID,
+                },
+              });
+            } else {
+              await prisma.order.update({
+                where: { id: paymentIntent.metadata.orderId },
+                data: {
+                  paymentStatus: isFullRefund ? PaymentStatus.REFUNDED : PaymentStatus.PAID,
+                },
+              });
+            }
           }
         }
       }

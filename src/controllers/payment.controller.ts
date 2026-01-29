@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { stripeService } from '../services/stripe.service';
 import { orderService } from '../services/order.service';
+import { chargingService } from '../services/charging.service';
 
 export const paymentController = {
   /**
@@ -13,24 +14,26 @@ export const paymentController = {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const { orderId } = req.body;
+      const { orderId, type } = req.body as { orderId?: string; type?: string };
+      const orderType = type === 'charging' ? 'charging' : 'fuel';
+      const isAdmin = req.user.role === 'ADMIN';
 
       if (!orderId) {
         return res.status(400).json({ error: 'orderId is required' });
       }
 
       // Verify order belongs to user
-      const order = await orderService.getOrderById(orderId, req.user.userId);
-
-      if (!order) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
+      const order =
+        orderType === 'charging'
+          ? await chargingService.getOrderById(orderId, req.user.userId, isAdmin)
+          : await orderService.getOrderById(orderId, req.user.userId, isAdmin);
 
       // Create payment intent
       const result = await stripeService.createPaymentIntent(
         orderId,
         order.totalAmount,
-        'usd'
+        'usd',
+        orderType
       );
 
       res.json({
@@ -39,7 +42,11 @@ export const paymentController = {
       });
     } catch (error: any) {
       console.error('Create payment intent error:', error);
-      res.status(400).json({ error: error.message || 'Failed to create payment intent' });
+      const message = error?.message || 'Failed to create payment intent';
+      if (message === 'Order not found') {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      res.status(400).json({ error: message });
     }
   },
 

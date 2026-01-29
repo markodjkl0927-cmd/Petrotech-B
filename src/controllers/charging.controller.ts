@@ -8,7 +8,7 @@ export const chargingController = {
    */
   async create(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.id;
+      const userId = req.user?.userId;
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
@@ -71,8 +71,8 @@ export const chargingController = {
    */
   async getOrders(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.id;
-      const isAdmin = (req as any).user?.role === 'ADMIN';
+      const userId = req.user?.userId;
+      const isAdmin = req.user?.role === 'ADMIN';
 
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -91,8 +91,8 @@ export const chargingController = {
    */
   async getOrderById(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.id;
-      const isAdmin = (req as any).user?.role === 'ADMIN';
+      const userId = req.user?.userId;
+      const isAdmin = req.user?.role === 'ADMIN';
 
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -113,9 +113,9 @@ export const chargingController = {
    */
   async updateStatus(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.id;
-      const isAdmin = (req as any).user?.role === 'ADMIN';
-      const isDriver = (req as any).user?.role === 'DRIVER';
+      const userId = req.user?.userId;
+      const isAdmin = req.user?.role === 'ADMIN';
+      const isDriver = req.user?.role === 'DRIVER';
 
       if (!userId || (!isAdmin && !isDriver)) {
         return res.status(403).json({ error: 'Forbidden: Admin or Driver access required' });
@@ -141,8 +141,8 @@ export const chargingController = {
    */
   async cancel(req: Request, res: Response) {
     try {
-      const userId = (req as any).user?.id;
-      const isAdmin = (req as any).user?.role === 'ADMIN';
+      const userId = req.user?.userId;
+      const isAdmin = req.user?.role === 'ADMIN';
 
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
