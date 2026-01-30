@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { ChargingOrderStatus, OrderStatus, PaymentStatus } from '@prisma/client';
 import { orderService } from '../services/order.service';
 
 export const adminController = {
@@ -235,6 +235,242 @@ export const adminController = {
               phone: true,
               vehicleType: true,
               vehicleNumber: true,
+            },
+          },
+        },
+      });
+
+      res.json({ order: updatedOrder });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to assign driver' });
+    }
+  },
+
+  // Get all EV charging orders (admin view)
+  async getAllChargingOrders(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const status = req.query.status as ChargingOrderStatus | undefined;
+      const skip = (page - 1) * limit;
+
+      const where: Record<string, any> = {};
+      if (status && Object.values(ChargingOrderStatus).includes(status)) {
+        where.status = status;
+      }
+
+      const [orders, total] = await Promise.all([
+        prisma.chargingOrder.findMany({
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+              },
+            },
+            address: true,
+            driver: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+                vehicleNumber: true,
+              },
+            },
+            chargingUnit: {
+              select: {
+                id: true,
+                name: true,
+                type: true,
+                connectorType: true,
+                maxPower: true,
+              },
+            },
+            cars: {
+              include: {
+                car: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.chargingOrder.count({ where }),
+      ]);
+
+      res.json({
+        orders,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch charging orders' });
+    }
+  },
+
+  // Update EV charging order status (admin view)
+  async updateChargingOrderStatus(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+      const { status, driverId } = req.body as { status?: ChargingOrderStatus; driverId?: string };
+
+      if (!status || !Object.values(ChargingOrderStatus).includes(status)) {
+        return res.status(400).json({ error: 'Valid status is required' });
+      }
+
+      const order = await prisma.chargingOrder.findUnique({ where: { id } });
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      // If assigning driver, validate driver exists and is available
+      if (driverId) {
+        const driver = await prisma.driver.findUnique({ where: { id: driverId } });
+        if (!driver) return res.status(404).json({ error: 'Driver not found' });
+        if (!driver.isAvailable || !driver.isActive) {
+          return res.status(400).json({ error: 'Driver is not available' });
+        }
+      }
+
+      const updateData: any = { status };
+      if (driverId) updateData.driverId = driverId;
+
+      // Timestamps based on status
+      if (status === ChargingOrderStatus.IN_PROGRESS) {
+        updateData.startedAt = new Date();
+      }
+      if (status === ChargingOrderStatus.COMPLETED) {
+        updateData.completedAt = new Date();
+      }
+      if (status === ChargingOrderStatus.CANCELLED) {
+        updateData.cancelledAt = new Date();
+      }
+
+      // Mark COD payments as PAID when completed
+      if (
+        status === ChargingOrderStatus.COMPLETED &&
+        order.paymentStatus === PaymentStatus.PENDING &&
+        order.paymentMethod !== 'ONLINE'
+      ) {
+        updateData.paymentStatus = PaymentStatus.PAID;
+      }
+
+      const updatedOrder = await prisma.chargingOrder.update({
+        where: { id },
+        data: updateData,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+          address: true,
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              vehicleNumber: true,
+            },
+          },
+          chargingUnit: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              connectorType: true,
+              maxPower: true,
+            },
+          },
+          cars: {
+            include: {
+              car: true,
+            },
+          },
+        },
+      });
+
+      res.json({ order: updatedOrder });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to update charging order status' });
+    }
+  },
+
+  // Assign driver to EV charging order (admin view)
+  async assignChargingOrderDriver(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+      const { driverId } = req.body as { driverId?: string };
+
+      if (!driverId) {
+        return res.status(400).json({ error: 'driverId is required' });
+      }
+
+      const order = await prisma.chargingOrder.findUnique({ where: { id } });
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      const driver = await prisma.driver.findUnique({ where: { id: driverId } });
+      if (!driver) return res.status(404).json({ error: 'Driver not found' });
+      if (!driver.isAvailable || !driver.isActive) {
+        return res.status(400).json({ error: 'Driver is not available' });
+      }
+
+      const updatedOrder = await prisma.chargingOrder.update({
+        where: { id },
+        data: {
+          driverId,
+          status: order.status === ChargingOrderStatus.PENDING ? ChargingOrderStatus.ASSIGNED : order.status,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+          address: true,
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              vehicleNumber: true,
+            },
+          },
+          cars: {
+            include: {
+              car: true,
             },
           },
         },

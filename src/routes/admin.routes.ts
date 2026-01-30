@@ -23,6 +23,11 @@ router.get('/orders/:id', adminController.getOrderById);
 router.put('/orders/:id/status', adminController.updateOrderStatus);
 router.put('/orders/:id/assign-driver', adminController.assignDriver);
 
+// EV Charging Orders
+router.get('/charging-orders', adminController.getAllChargingOrders);
+router.put('/charging-orders/:id/status', adminController.updateChargingOrderStatus);
+router.put('/charging-orders/:id/assign-driver', adminController.assignChargingOrderDriver);
+
 // Drivers
 router.get('/drivers', adminController.getAllDrivers);
 router.get('/drivers/available', adminController.getAvailableDrivers);
