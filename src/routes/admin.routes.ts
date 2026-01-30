@@ -32,6 +32,7 @@ router.put('/charging-orders/:id/assign-driver', adminController.assignChargingO
 router.get('/drivers', adminController.getAllDrivers);
 router.get('/drivers/available', adminController.getAvailableDrivers);
 router.post('/drivers', adminController.createDriver);
+router.post('/drivers/:id/invite', adminController.createDriverInvite);
 router.put('/drivers/:id', adminController.updateDriver);
 router.delete('/drivers/:id', adminController.deleteDriver);
 

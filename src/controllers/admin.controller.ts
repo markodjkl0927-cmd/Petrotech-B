@@ -2,6 +2,10 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { ChargingOrderStatus, OrderStatus, PaymentStatus } from '@prisma/client';
 import { orderService } from '../services/order.service';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+const INVITE_JWT_SECRET: string = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 export const adminController = {
   // Get all orders (admin view)
@@ -491,6 +495,21 @@ export const adminController = {
 
       const drivers = await prisma.driver.findMany({
         orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          photoUrl: true,
+          licenseNumber: true,
+          vehicleType: true,
+          vehicleNumber: true,
+          isAvailable: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
 
       res.json({ drivers });
@@ -512,6 +531,18 @@ export const adminController = {
           isActive: true,
         },
         orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          photoUrl: true,
+          vehicleType: true,
+          vehicleNumber: true,
+          isAvailable: true,
+          isActive: true,
+        },
       });
 
       res.json({ drivers });
@@ -527,7 +558,7 @@ export const adminController = {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
-      const { firstName, lastName, email, phone, licenseNumber, vehicleType, vehicleNumber } = req.body;
+      const { firstName, lastName, email, phone, licenseNumber, vehicleType, vehicleNumber, password, photoUrl } = req.body;
 
       if (!firstName || !lastName || !email || !phone || !licenseNumber || !vehicleType || !vehicleNumber) {
         return res.status(400).json({
@@ -548,13 +579,30 @@ export const adminController = {
         data: {
           firstName,
           lastName,
-          email,
+          email: String(email).toLowerCase(),
           phone,
+          photoUrl,
           licenseNumber,
           vehicleType,
           vehicleNumber,
           isAvailable: true,
           isActive: true,
+          password: password ? await bcrypt.hash(String(password), 10) : undefined,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          photoUrl: true,
+          licenseNumber: true,
+          vehicleType: true,
+          vehicleNumber: true,
+          isAvailable: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
 
@@ -572,27 +620,94 @@ export const adminController = {
       }
 
       const { id } = req.params;
-      const { firstName, lastName, email, phone, licenseNumber, vehicleType, vehicleNumber, isAvailable, isActive } =
+      const { firstName, lastName, email, phone, photoUrl, licenseNumber, vehicleType, vehicleNumber, isAvailable, isActive, password } =
         req.body;
+
+      const updateData: any = {
+        firstName,
+        lastName,
+        email: email ? String(email).toLowerCase() : undefined,
+        phone,
+        photoUrl,
+        licenseNumber,
+        vehicleType,
+        vehicleNumber,
+        isAvailable,
+        isActive,
+      };
+
+      if (password) {
+        updateData.password = await bcrypt.hash(String(password), 10);
+      }
 
       const driver = await prisma.driver.update({
         where: { id },
-        data: {
-          firstName,
-          lastName,
-          email,
-          phone,
-          licenseNumber,
-          vehicleType,
-          vehicleNumber,
-          isAvailable,
-          isActive,
+        data: updateData,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          photoUrl: true,
+          licenseNumber: true,
+          vehicleType: true,
+          vehicleNumber: true,
+          isAvailable: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
 
       res.json({ driver });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to update driver' });
+    }
+  },
+
+  // Generate one-time invite token for driver activation (admin)
+  async createDriverInvite(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { id } = req.params;
+      const ttlHoursRaw = (req.body?.ttlHours ?? req.query?.ttlHours) as string | number | undefined;
+      const ttlHours = Number(ttlHoursRaw || 24 * 7); // default: 7 days
+      const safeTtlHours = Number.isFinite(ttlHours) && ttlHours > 0 ? Math.min(ttlHours, 24 * 30) : 24 * 7; // cap at 30 days
+
+      const driver = await prisma.driver.findUnique({
+        where: { id },
+        select: { id: true, email: true, firstName: true, lastName: true, isActive: true },
+      });
+
+      if (!driver) return res.status(404).json({ error: 'Driver not found' });
+      if (!driver.isActive) return res.status(400).json({ error: 'Driver account is deactivated' });
+
+      const expiresAt = new Date(Date.now() + safeTtlHours * 60 * 60 * 1000);
+
+      // MVP: use a signed, time-limited token (no DB columns required).
+      // This avoids failures if migrations haven't been applied yet.
+      const token = jwt.sign(
+        { driverId: driver.id, purpose: 'DRIVER_INVITE' },
+        INVITE_JWT_SECRET,
+        { expiresIn: safeTtlHours * 60 * 60 } as any
+      );
+
+      res.json({
+        token,
+        expiresAt,
+        driver: {
+          id: driver.id,
+          email: driver.email,
+          firstName: driver.firstName,
+          lastName: driver.lastName,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to create driver invite' });
     }
   },
 

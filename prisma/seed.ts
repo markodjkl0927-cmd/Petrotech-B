@@ -75,11 +75,15 @@ async function main() {
   console.log('Admin user created! Email: admin@petrotech.com, Password: admin123');
 
   // Create sample driver
+  const driverPassword = await bcrypt.hash('driver123', 10);
   await prisma.driver.upsert({
     where: { email: 'driver1@petrotech.com' },
-    update: {},
+    update: {
+      password: driverPassword,
+    },
     create: {
       email: 'driver1@petrotech.com',
+      password: driverPassword,
       firstName: 'John',
       lastName: 'Driver',
       phone: '+1234567890',
@@ -91,7 +95,7 @@ async function main() {
     },
   });
 
-  console.log('Sample driver created!');
+  console.log('Sample driver created! Email: driver1@petrotech.com, Password: driver123');
 
   console.log('Seeding completed!');
 }

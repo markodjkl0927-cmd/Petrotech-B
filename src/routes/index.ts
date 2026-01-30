@@ -8,6 +8,8 @@ import adminRoutes from './admin.routes';
 import paymentRoutes from './payment.routes';
 import chargingRoutes from './charging.routes';
 import carRoutes from './car.routes';
+import driverAuthRoutes from './driver-auth.routes';
+import driverRoutes from './driver.routes';
 
 const router = Router();
 
@@ -20,6 +22,8 @@ router.use('/admin', adminRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/charging', chargingRoutes);
 router.use('/cars', carRoutes);
+router.use('/driver/auth', driverAuthRoutes);
+router.use('/driver', driverRoutes);
 
 export default router;
 
