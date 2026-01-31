@@ -40,6 +40,9 @@ router.get('/me', driverController.getMe);
 router.put('/me', driverController.updateMe);
 router.post('/me/photo', upload.single('photo'), driverController.uploadPhoto);
 
+// Live location (MVP)
+router.post('/location', driverController.updateLocation);
+
 // Assigned fuel orders
 router.get('/orders', driverController.getAssignedFuelOrders);
 router.get('/orders/:id', driverController.getFuelOrderById);

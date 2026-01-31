@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { orderService } from '../services/order.service';
 import { DeliveryType, PaymentMethod } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
 export const orderController = {
   async create(req: Request, res: Response) {
@@ -80,6 +81,83 @@ export const orderController = {
       res.json({ order });
     } catch (error: any) {
       res.status(404).json({ error: error.message || 'Order not found' });
+    }
+  },
+
+  // Live tracking (customer/admin/driver)
+  async getTracking(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+
+      const order = await prisma.order.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          orderNumber: true,
+          userId: true,
+          driverId: true,
+          status: true,
+          deliveredAt: true,
+          cancelledAt: true,
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              vehicleType: true,
+              vehicleNumber: true,
+              photoUrl: true,
+            },
+          },
+        },
+      });
+
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      // Permissions:
+      // - CUSTOMER: must own the order
+      // - DRIVER: must be the assigned driver
+      // - ADMIN: allowed
+      if (req.user.role === 'CUSTOMER' && order.userId !== req.user.userId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (req.user.role === 'DRIVER' && order.driverId !== req.user.userId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const location = order.driverId
+        ? await prisma.driverLocation.findUnique({
+            where: { driverId: order.driverId },
+            select: {
+              latitude: true,
+              longitude: true,
+              accuracy: true,
+              heading: true,
+              speed: true,
+              updatedAt: true,
+            },
+          })
+        : null;
+
+      res.json({
+        tracking: {
+          orderType: 'FUEL',
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          status: order.status,
+          deliveredAt: order.deliveredAt,
+          cancelledAt: order.cancelledAt,
+          driver: order.driverId ? order.driver : null,
+          location,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch tracking' });
     }
   },
 

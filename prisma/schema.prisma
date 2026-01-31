@@ -79,8 +79,25 @@ model Driver {
   updatedAt      DateTime       @updatedAt
   orders         Order[]
   chargingOrders ChargingOrder[]
+  location       DriverLocation?
 
   @@map("drivers")
+}
+
+model DriverLocation {
+  id        String   @id @default(uuid())
+  driverId  String   @unique
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  heading   Float?
+  speed     Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_locations")
 }
 
 model Order {

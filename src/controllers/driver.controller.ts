@@ -131,6 +131,59 @@ export const driverController = {
     }
   },
 
+  // Driver live location (MVP). Driver app should call this while active.
+  async updateLocation(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+
+      const latitude = Number((req.body as any)?.latitude);
+      const longitude = Number((req.body as any)?.longitude);
+      const accuracy = (req.body as any)?.accuracy;
+      const heading = (req.body as any)?.heading;
+      const speed = (req.body as any)?.speed;
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return res.status(400).json({ error: 'latitude and longitude are required' });
+      }
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        return res.status(400).json({ error: 'Invalid latitude/longitude' });
+      }
+
+      const location = await prisma.driverLocation.upsert({
+        where: { driverId },
+        create: {
+          driverId,
+          latitude,
+          longitude,
+          accuracy: typeof accuracy === 'number' ? accuracy : Number.isFinite(Number(accuracy)) ? Number(accuracy) : undefined,
+          heading: typeof heading === 'number' ? heading : Number.isFinite(Number(heading)) ? Number(heading) : undefined,
+          speed: typeof speed === 'number' ? speed : Number.isFinite(Number(speed)) ? Number(speed) : undefined,
+        },
+        update: {
+          latitude,
+          longitude,
+          accuracy: typeof accuracy === 'number' ? accuracy : Number.isFinite(Number(accuracy)) ? Number(accuracy) : undefined,
+          heading: typeof heading === 'number' ? heading : Number.isFinite(Number(heading)) ? Number(heading) : undefined,
+          speed: typeof speed === 'number' ? speed : Number.isFinite(Number(speed)) ? Number(speed) : undefined,
+        },
+        select: {
+          driverId: true,
+          latitude: true,
+          longitude: true,
+          accuracy: true,
+          heading: true,
+          speed: true,
+          updatedAt: true,
+        },
+      });
+
+      res.json({ location });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to update driver location' });
+    }
+  },
+
   async getAssignedFuelOrders(req: Request, res: Response) {
     try {
       if (!req.user) return res.status(401).json({ error: 'Unauthorized' });

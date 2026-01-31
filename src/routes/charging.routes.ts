@@ -20,6 +20,7 @@ router.post('/', chargingController.create);
 router.get('/', chargingController.getOrders);
 
 // Get order by ID
+router.get('/:id/tracking', chargingController.getTracking);
 router.get('/:id', chargingController.getOrderById);
 
 // Update order status (admin/driver only)
