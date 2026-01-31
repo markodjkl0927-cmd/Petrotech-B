@@ -9,6 +9,32 @@ interface GeocodingResult {
   longitude: number;
 }
 
+type ReverseGeocodeResult = {
+  displayName: string;
+  shortLabel: string;
+};
+
+const reverseCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    value: ReverseGeocodeResult | null;
+  }
+>();
+
+const REVERSE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function buildShortLabel(address: any): string {
+  const road = address?.road || address?.pedestrian || address?.footway || address?.path;
+  const suburb = address?.suburb || address?.neighbourhood;
+  const city = address?.city || address?.town || address?.village || address?.hamlet;
+  const state = address?.state;
+  const country = address?.country;
+
+  const parts = [road, suburb, city, state, country].filter(Boolean);
+  return parts.join(', ') || '';
+}
+
 /**
  * Geocode an address to get latitude and longitude
  * @param street - Street address
@@ -63,6 +89,66 @@ export async function geocodeAddress(
     };
   } catch (error) {
     console.error('Geocoding error:', error);
+    return null;
+  }
+}
+
+/**
+ * Reverse geocode coordinates into a human-readable place label (MVP).
+ * Uses OpenStreetMap Nominatim reverse endpoint.
+ *
+ * NOTE: Do not call this on every poll tick; cache or throttle callers.
+ */
+export async function reverseGeocodeLocation(
+  latitude: number,
+  longitude: number
+): Promise<ReverseGeocodeResult | null> {
+  try {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+    // Cache by ~11m precision to reduce external calls
+    const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+    const cached = reverseCache.get(key);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) return cached.value;
+
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+      String(latitude)
+    )}&lon=${encodeURIComponent(String(longitude))}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6500);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Petrotech-Fuel-Delivery/1.0', // Required by Nominatim
+        'Accept-Language': 'en', // Prefer readable English labels
+      },
+    }).finally(() => clearTimeout(timeout));
+
+    if (!response.ok) {
+      reverseCache.set(key, { expiresAt: now + REVERSE_CACHE_TTL_MS, value: null });
+      return null;
+    }
+
+    let data: any = null;
+    try {
+      data = await response.json();
+    } catch {
+      reverseCache.set(key, { expiresAt: now + REVERSE_CACHE_TTL_MS, value: null });
+      return null;
+    }
+    const displayName = String(data?.display_name || '').trim();
+    const shortLabel = buildShortLabel(data?.address);
+
+    const value: ReverseGeocodeResult | null = displayName
+      ? { displayName, shortLabel: shortLabel || displayName }
+      : null;
+
+    reverseCache.set(key, { expiresAt: now + REVERSE_CACHE_TTL_MS, value });
+    return value;
+  } catch (error) {
+    console.error('Reverse geocoding error:', error);
     return null;
   }
 }

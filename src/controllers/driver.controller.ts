@@ -142,6 +142,8 @@ export const driverController = {
       const accuracy = (req.body as any)?.accuracy;
       const heading = (req.body as any)?.heading;
       const speed = (req.body as any)?.speed;
+      const orderType = (req.body as any)?.orderType;
+      const orderId = (req.body as any)?.orderId;
 
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
         return res.status(400).json({ error: 'latitude and longitude are required' });
@@ -177,6 +179,16 @@ export const driverController = {
           updatedAt: true,
         },
       });
+
+      // Dev-only logging to verify tracking (avoid logging sensitive live location in prod)
+      if (process.env.NODE_ENV !== 'production') {
+        const ctx = orderType && orderId ? ` ${String(orderType)}:${String(orderId)}` : '';
+        console.log(
+          `[tracking] driver=${driverId}${ctx} lat=${location.latitude.toFixed(5)} lng=${location.longitude.toFixed(
+            5
+          )} acc=${location.accuracy ?? '—'} heading=${location.heading ?? '—'} speed=${location.speed ?? '—'}`
+        );
+      }
 
       res.json({ location });
     } catch (error: any) {

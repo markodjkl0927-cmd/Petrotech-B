@@ -10,6 +10,7 @@ import chargingRoutes from './charging.routes';
 import carRoutes from './car.routes';
 import driverAuthRoutes from './driver-auth.routes';
 import driverRoutes from './driver.routes';
+import trackingRoutes from './tracking.routes';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.use('/charging', chargingRoutes);
 router.use('/cars', carRoutes);
 router.use('/driver/auth', driverAuthRoutes);
 router.use('/driver', driverRoutes);
+router.use('/tracking', trackingRoutes);
 
 export default router;
 
