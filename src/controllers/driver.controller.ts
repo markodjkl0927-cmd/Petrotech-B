@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { ChargingOrderStatus, OrderStatus, PaymentStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { getDriverEarnings } from '../services/driverEarnings.service';
+import { stripeService } from '../services/stripe.service';
+import { PayoutStatus } from '@prisma/client';
 
 export const driverController = {
   async getMe(req: Request, res: Response) {
@@ -367,6 +370,215 @@ export const driverController = {
       res.json({ order });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to update charging order status' });
+    }
+  },
+
+  // --- Earnings & payouts ---
+
+  async getEarnings(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const earnings = await getDriverEarnings(driverId);
+      res.json(earnings);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch earnings' });
+    }
+  },
+
+  async requestPayout(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const { amount } = req.body as { amount?: number };
+
+      if (typeof amount !== 'number' || amount <= 0) {
+        return res.status(400).json({ error: 'Valid amount (positive number) is required' });
+      }
+
+      const driver = await prisma.driver.findUnique({
+        where: { id: driverId },
+        select: { stripeConnectAccountId: true, firstName: true, lastName: true, email: true },
+      });
+      if (!driver) return res.status(404).json({ error: 'Driver not found' });
+      if (!driver.stripeConnectAccountId) {
+        return res.status(400).json({ error: 'Please set up your payout method first (bank or card)' });
+      }
+
+      const earnings = await getDriverEarnings(driverId);
+      if (amount > earnings.availableBalance) {
+        return res.status(400).json({ error: `Amount cannot exceed available balance ($${earnings.availableBalance.toFixed(2)})` });
+      }
+      if (amount < earnings.minPayoutAmount) {
+        return res.status(400).json({ error: `Minimum payout is $${earnings.minPayoutAmount.toFixed(2)}` });
+      }
+
+      const amountCents = Math.round(amount * 100);
+      let stripeTransferId: string | null = null;
+      let status: PayoutStatus = PayoutStatus.PENDING;
+
+      // When using test account from env, use it as transfer destination (avoids DB typo/stale ID)
+      const testAccountId = process.env.STRIPE_CONNECT_TEST_ACCOUNT_ID?.trim();
+      const destinationAccountId =
+        testAccountId && testAccountId.startsWith('acct_') ? testAccountId : driver.stripeConnectAccountId;
+
+      // Verify the destination account is accessible with this platform's key (same Stripe account, test mode)
+      const account = await stripeService.getConnectAccount(destinationAccountId!);
+      if (!account || account.deleted) {
+        return res.status(400).json({
+          error:
+            'Connected account not found with your Stripe key. The account ID may be from a different Stripe account or live/test mode. In Dashboard: switch to Test mode, go to Connect → Connected accounts, open the account, and copy its ID again. Ensure you are in the same Stripe account that owns STRIPE_SECRET_KEY.',
+        });
+      }
+
+      try {
+        stripeTransferId = await stripeService.createTransferToConnect({
+          amountCents,
+          destinationStripeAccountId: destinationAccountId!,
+          description: `Payout for ${driver.firstName} ${driver.lastName}`,
+        });
+        status = PayoutStatus.SUCCEEDED;
+      } catch (e: any) {
+        status = PayoutStatus.FAILED;
+        const payoutRecord = await prisma.driverPayout.create({
+          data: {
+            driverId,
+            amount,
+            status: PayoutStatus.FAILED,
+            failureReason: e?.message ?? 'Transfer failed',
+          },
+        });
+        return res.status(502).json({
+          error: e?.message || 'Payout failed',
+          payout: { id: payoutRecord.id, status: payoutRecord.status },
+        });
+      }
+
+      const payout = await prisma.driverPayout.create({
+        data: {
+          driverId,
+          amount,
+          status,
+          stripeTransferId,
+        },
+      });
+      res.json({ payout });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to request payout' });
+    }
+  },
+
+  async getPayouts(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const payouts = await prisma.driverPayout.findMany({
+        where: { driverId },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+      res.json({ payouts });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch payouts' });
+    }
+  },
+
+  async getConnectOnboardingLink(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const baseUrl = `${req.protocol}://${req.get('host')}`.replace(/\/api\/?$/, '');
+      // App can pass returnUrl and refreshUrl (e.g. deep link) so driver returns to app after onboarding
+      const returnUrl = (req.body?.returnUrl || req.query?.returnUrl as string) || `${baseUrl}/driver/connect-return`;
+      const refreshUrl = (req.body?.refreshUrl || req.query?.refreshUrl as string) || `${baseUrl}/driver/connect-refresh`;
+
+      let driver = await prisma.driver.findUnique({
+        where: { id: driverId },
+        select: { stripeConnectAccountId: true, email: true, firstName: true, lastName: true },
+      });
+      if (!driver) return res.status(404).json({ error: 'Driver not found' });
+
+      if (!driver.stripeConnectAccountId) {
+        const testAccountId = process.env.STRIPE_CONNECT_TEST_ACCOUNT_ID?.trim();
+        if (testAccountId && testAccountId.startsWith('acct_')) {
+          // Testing: use a pre-created Connect account (from Dashboard). Don't create account link - Stripe rejects links for accounts not created via API.
+          await prisma.driver.update({
+            where: { id: driverId },
+            data: { stripeConnectAccountId: testAccountId },
+          });
+          return res.json({ url: null, alreadyConfigured: true });
+        } else {
+          try {
+            const accountId = await stripeService.createConnectAccount({
+              email: driver.email,
+              firstName: driver.firstName,
+              lastName: driver.lastName,
+            });
+            await prisma.driver.update({
+              where: { id: driverId },
+              data: { stripeConnectAccountId: accountId },
+            });
+            driver = { ...driver, stripeConnectAccountId: accountId };
+          } catch (createErr: any) {
+            const msg = createErr?.message || '';
+            if (msg.includes('signed up for Connect')) {
+              return res.status(503).json({
+                error:
+                  'Stripe Connect is not enabled for this account. In Stripe Dashboard go to Connect → complete platform setup, or set STRIPE_CONNECT_TEST_ACCOUNT_ID in backend .env to your test connected account ID (acct_...) for testing.',
+              });
+            }
+            throw createErr;
+          }
+        }
+      }
+
+      // Don't create account link for test account (Dashboard-created) - Stripe rejects it
+      const testAccountId = process.env.STRIPE_CONNECT_TEST_ACCOUNT_ID?.trim();
+      if (testAccountId && driver.stripeConnectAccountId === testAccountId) {
+        return res.json({ url: null, alreadyConfigured: true });
+      }
+
+      const url = await stripeService.createAccountLink(
+        driver.stripeConnectAccountId!,
+        refreshUrl,
+        returnUrl
+      );
+      res.json({ url });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to create onboarding link' });
+    }
+  },
+
+  async getConnectStatus(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const driver = await prisma.driver.findUnique({
+        where: { id: driverId },
+        select: { stripeConnectAccountId: true },
+      });
+      if (!driver?.stripeConnectAccountId) {
+        return res.json({ hasConnectAccount: false, chargesEnabled: false, payoutsEnabled: false });
+      }
+      // Test account (Dashboard-created): treat as ready so Withdraw button shows without calling Stripe
+      const testAccountId = process.env.STRIPE_CONNECT_TEST_ACCOUNT_ID?.trim();
+      if (testAccountId && driver.stripeConnectAccountId === testAccountId) {
+        return res.json({ hasConnectAccount: true, chargesEnabled: true, payoutsEnabled: true });
+      }
+      const account = await stripeService.getConnectAccount(driver.stripeConnectAccountId);
+      if (!account || account.deleted) {
+        return res.json({ hasConnectAccount: true, chargesEnabled: false, payoutsEnabled: false });
+      }
+      const acc = account as { charges_enabled?: boolean; payouts_enabled?: boolean; details_submitted?: boolean };
+      // Express accounts: payouts_enabled means they can receive transfers; details_submitted means onboarding done
+      const payoutsEnabled = !!acc.payouts_enabled || !!acc.details_submitted;
+      res.json({
+        hasConnectAccount: true,
+        chargesEnabled: !!acc.charges_enabled,
+        payoutsEnabled,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to get Connect status' });
     }
   },
 };

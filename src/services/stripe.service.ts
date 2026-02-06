@@ -269,4 +269,71 @@ export const stripeService = {
       throw new Error(error.message || 'Failed to create refund');
     }
   },
+
+  // --- Stripe Connect (driver payouts) ---
+
+  /**
+   * Create a Stripe Connect Express account for a driver
+   */
+  async createConnectAccount(params: { email: string; firstName: string; lastName: string }) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.');
+    }
+    const account = await stripe.accounts.create({
+      type: 'express',
+      country: 'US',
+      email: params.email,
+      capabilities: { transfers: { requested: true } },
+    });
+    return account.id;
+  },
+
+  /**
+   * Create an account link for Connect onboarding (add bank account / identity)
+   */
+  async createAccountLink(accountId: string, refreshUrl: string, returnUrl: string) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured.');
+    }
+    const link = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: 'account_onboarding',
+    });
+    return link.url;
+  },
+
+  /**
+   * Retrieve Connect account to check onboarding status
+   */
+  async getConnectAccount(accountId: string) {
+    if (!stripe) return null;
+    try {
+      const account = await stripe.accounts.retrieve(accountId);
+      return account;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Create a Transfer to a connected account (driver payout). Platform balance is debited.
+   */
+  async createTransferToConnect(params: {
+    amountCents: number;
+    destinationStripeAccountId: string;
+    description?: string;
+  }) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured.');
+    }
+    const transfer = await stripe.transfers.create({
+      amount: params.amountCents,
+      currency: 'usd',
+      destination: params.destinationStripeAccountId,
+      description: params.description ?? 'Driver earnings payout',
+    });
+    return transfer.id;
+  },
 };

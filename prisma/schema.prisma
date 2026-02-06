@@ -63,25 +63,47 @@ model Product {
 }
 
 model Driver {
-  id             String         @id @default(uuid())
-  firstName      String
-  lastName       String
-  email          String         @unique
-  password       String?
-  phone          String
-  photoUrl       String?
-  licenseNumber  String
-  vehicleType    String
-  vehicleNumber  String
-  isAvailable    Boolean        @default(true)
-  isActive       Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  orders         Order[]
-  chargingOrders ChargingOrder[]
-  location       DriverLocation?
+  id                     String         @id @default(uuid())
+  firstName              String
+  lastName               String
+  email                  String         @unique
+  password               String?
+  phone                  String
+  photoUrl               String?
+  licenseNumber          String
+  vehicleType            String
+  vehicleNumber          String
+  isAvailable            Boolean         @default(true)
+  isActive               Boolean         @default(true)
+  stripeConnectAccountId String?         @unique // Stripe Connect Express account for payouts
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  orders                 Order[]
+  chargingOrders         ChargingOrder[]
+  location               DriverLocation?
+  payouts                DriverPayout[]
 
   @@map("drivers")
+}
+
+model DriverPayout {
+  id                String       @id @default(uuid())
+  driverId          String
+  amount            Float        // Amount in dollars
+  status            PayoutStatus @default(PENDING)
+  stripeTransferId  String?
+  failureReason     String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  driver            Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_payouts")
+}
+
+enum PayoutStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
 }
 
 model DriverLocation {

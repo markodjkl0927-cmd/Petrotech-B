@@ -197,6 +197,15 @@ export const orderService = {
       where,
       include: {
         address: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+          },
+        },
         driver: {
           select: {
             id: true,

@@ -231,6 +231,16 @@ export const adminController = {
           status: order.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : order.status,
         },
         include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+          address: true,
           driver: {
             select: {
               id: true,
@@ -239,6 +249,11 @@ export const adminController = {
               phone: true,
               vehicleType: true,
               vehicleNumber: true,
+            },
+          },
+          orderItems: {
+            include: {
+              product: true,
             },
           },
         },
@@ -518,6 +533,40 @@ export const adminController = {
     }
   },
 
+  // Get driver by ID (for admin edit)
+  async getDriverById(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      const { id } = req.params;
+      const driver = await prisma.driver.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          photoUrl: true,
+          licenseNumber: true,
+          vehicleType: true,
+          vehicleNumber: true,
+          isAvailable: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      if (!driver) {
+        return res.status(404).json({ error: 'Driver not found' });
+      }
+      res.json({ driver });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch driver' });
+    }
+  },
+
   // Get available drivers
   async getAvailableDrivers(req: Request, res: Response) {
     try {
@@ -751,6 +800,32 @@ export const adminController = {
       res.json({ message: 'Driver deleted successfully' });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to delete driver' });
+    }
+  },
+
+  // Get customer by ID (for order detail when user not embedded)
+  async getCustomerById(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      const { id } = req.params;
+      const customer = await prisma.user.findFirst({
+        where: { id, role: 'CUSTOMER' },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+        },
+      });
+      if (!customer) {
+        return res.status(404).json({ error: 'Customer not found' });
+      }
+      res.json({ customer });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch customer' });
     }
   },
 

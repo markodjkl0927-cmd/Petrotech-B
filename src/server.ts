@@ -58,6 +58,7 @@ app.get('/api', (req, res) => {
       orders: '/api/orders',
       addresses: '/api/addresses',
       admin: '/api/admin',
+      driver: '/api/driver (earnings, payouts, connect)',
     }
   });
 });

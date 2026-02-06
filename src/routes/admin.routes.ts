@@ -13,6 +13,7 @@ router.use(authorize('ADMIN'));
 router.get('/dashboard/stats', adminController.getDashboardStats);
 
 // Products (admin management)
+router.get('/products', productController.getAllAdmin);
 router.post('/products', productController.create);
 router.put('/products/:id', productController.update);
 router.delete('/products/:id', productController.delete);
@@ -31,6 +32,7 @@ router.put('/charging-orders/:id/assign-driver', adminController.assignChargingO
 // Drivers
 router.get('/drivers', adminController.getAllDrivers);
 router.get('/drivers/available', adminController.getAvailableDrivers);
+router.get('/drivers/:id', adminController.getDriverById);
 router.post('/drivers', adminController.createDriver);
 router.post('/drivers/:id/invite', adminController.createDriverInvite);
 router.put('/drivers/:id', adminController.updateDriver);
@@ -38,6 +40,7 @@ router.delete('/drivers/:id', adminController.deleteDriver);
 
 // Customers
 router.get('/customers', adminController.getAllCustomers);
+router.get('/customers/:id', adminController.getCustomerById);
 router.put('/customers/:id', adminController.updateCustomer);
 router.delete('/customers/:id', adminController.deleteCustomer);
 

@@ -53,5 +53,12 @@ router.get('/charging-orders', driverController.getAssignedChargingOrders);
 router.get('/charging-orders/:id', driverController.getChargingOrderById);
 router.patch('/charging-orders/:id/status', driverController.updateChargingOrderStatus);
 
+// Earnings & payouts
+router.get('/earnings', driverController.getEarnings);
+router.get('/payouts', driverController.getPayouts);
+router.post('/payouts', driverController.requestPayout);
+router.get('/connect/onboarding-link', driverController.getConnectOnboardingLink);
+router.get('/connect/status', driverController.getConnectStatus);
+
 export default router;
 

@@ -19,6 +19,25 @@ export const productController = {
     }
   },
 
+  // Admin: get all products (including unavailable)
+  async getAllAdmin(req: Request, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const products = await prisma.product.findMany({
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      res.json({ products });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch products' });
+    }
+  },
+
   async getById(req: Request, res: Response) {
     try {
       const { id } = req.params;
