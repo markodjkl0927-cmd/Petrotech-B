@@ -4,6 +4,7 @@ import { ChargingOrderStatus, OrderStatus, PaymentStatus } from '@prisma/client'
 import bcrypt from 'bcryptjs';
 import { getDriverEarnings } from '../services/driverEarnings.service';
 import { stripeService } from '../services/stripe.service';
+import { notifyUser, notifyDriver } from '../services/notification.service';
 import { PayoutStatus } from '@prisma/client';
 
 export const driverController = {
@@ -277,6 +278,18 @@ export const driverController = {
         },
       });
 
+      // Push: status update (customer)
+      const statusMessages: Record<string, string> = {
+        [OrderStatus.DISPATCHED]: 'Your driver is on the way.',
+        [OrderStatus.IN_TRANSIT]: 'Your driver is on the way.',
+        [OrderStatus.DELIVERED]: `Your fuel order #${order.orderNumber} has been delivered.`,
+        [OrderStatus.CANCELLED]: `Order #${order.orderNumber} was cancelled.`,
+      };
+      const msg = statusMessages[status];
+      if (msg) {
+        notifyUser(order.userId, 'Order update', msg, { type: 'order_status', orderId: id, status }).catch(() => {});
+      }
+
       res.json({ order });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to update order status' });
@@ -367,6 +380,17 @@ export const driverController = {
         },
       });
 
+      // Push: charging status (customer)
+      const statusMessages: Record<string, string> = {
+        [ChargingOrderStatus.IN_PROGRESS]: 'Your EV charging session has started.',
+        [ChargingOrderStatus.COMPLETED]: `Your EV charging order #${order.orderNumber} is complete.`,
+        [ChargingOrderStatus.CANCELLED]: `Charging order #${order.orderNumber} was cancelled.`,
+      };
+      const msg = statusMessages[status];
+      if (msg) {
+        notifyUser(order.userId, 'Charging update', msg, { type: 'charging_status', orderId: id, status }).catch(() => {});
+      }
+
       res.json({ order });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to update charging order status' });
@@ -448,6 +472,7 @@ export const driverController = {
             failureReason: e?.message ?? 'Transfer failed',
           },
         });
+        notifyDriver(driverId, 'Payout failed', `Your payout of $${amount.toFixed(2)} could not be completed. Check the app for details.`, { type: 'payout_failed', payoutId: payoutRecord.id }).catch(() => {});
         return res.status(502).json({
           error: e?.message || 'Payout failed',
           payout: { id: payoutRecord.id, status: payoutRecord.status },
@@ -462,6 +487,7 @@ export const driverController = {
           stripeTransferId,
         },
       });
+      notifyDriver(driverId, 'Payout sent', `Your payout of $${amount.toFixed(2)} has been sent to your account.`, { type: 'payout_succeeded', payoutId: payout.id }).catch(() => {});
       res.json({ payout });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to request payout' });
@@ -579,6 +605,25 @@ export const driverController = {
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to get Connect status' });
+    }
+  },
+
+  async registerPushToken(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const { token, platform } = req.body as { token?: string; platform?: string };
+      if (!token || typeof token !== 'string' || !platform || !['ios', 'android', 'web'].includes(platform)) {
+        return res.status(400).json({ error: 'token and platform (ios|android|web) are required' });
+      }
+      await prisma.pushToken.upsert({
+        where: { token },
+        create: { driverId, token, platform },
+        update: { driverId, platform, updatedAt: new Date() },
+      });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to register push token' });
     }
   },
 };

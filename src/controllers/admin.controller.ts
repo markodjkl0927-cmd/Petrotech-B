@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { ChargingOrderStatus, OrderStatus, PaymentStatus } from '@prisma/client';
 import { orderService } from '../services/order.service';
+import { notifyUser, notifyDriver } from '../services/notification.service';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -184,6 +185,19 @@ export const adminController = {
         },
       });
 
+      // Push: order status change (customer)
+      const statusMessages: Record<string, string> = {
+        [OrderStatus.CONFIRMED]: 'Your fuel order is confirmed.',
+        [OrderStatus.DISPATCHED]: 'Your driver is on the way.',
+        [OrderStatus.IN_TRANSIT]: 'Your driver is on the way.',
+        [OrderStatus.DELIVERED]: `Your fuel order #${updatedOrder.orderNumber} has been delivered.`,
+        [OrderStatus.CANCELLED]: `Order #${updatedOrder.orderNumber} was cancelled.`,
+      };
+      const msg = statusMessages[status];
+      if (msg) {
+        notifyUser(updatedOrder.userId, 'Order update', msg, { type: 'order_status', orderId: id, status }).catch(() => {});
+      }
+
       res.json({ order: updatedOrder });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to update order status' });
@@ -258,6 +272,10 @@ export const adminController = {
           },
         },
       });
+
+      // Push: driver assigned
+      notifyUser(updatedOrder.userId, 'Driver assigned', `A driver is assigned to your fuel order #${updatedOrder.orderNumber}. Track delivery in the app.`, { type: 'order_assigned', orderId: id }).catch(() => {});
+      notifyDriver(driverId, 'New delivery', `You’re assigned to fuel order #${updatedOrder.orderNumber}. Open the app to view details.`, { type: 'order_assigned', orderId: id }).catch(() => {});
 
       res.json({ order: updatedOrder });
     } catch (error: any) {
@@ -432,6 +450,18 @@ export const adminController = {
         },
       });
 
+      // Push: charging order status (customer)
+      const statusMessages: Record<string, string> = {
+        [ChargingOrderStatus.ASSIGNED]: 'A driver is assigned to your EV charging request.',
+        [ChargingOrderStatus.IN_PROGRESS]: 'Your EV charging session has started.',
+        [ChargingOrderStatus.COMPLETED]: `Your EV charging order #${updatedOrder.orderNumber} is complete.`,
+        [ChargingOrderStatus.CANCELLED]: `Charging order #${updatedOrder.orderNumber} was cancelled.`,
+      };
+      const msg = statusMessages[status];
+      if (msg) {
+        notifyUser(updatedOrder.userId, 'Charging update', msg, { type: 'charging_status', orderId: id, status }).catch(() => {});
+      }
+
       res.json({ order: updatedOrder });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to update charging order status' });
@@ -494,6 +524,10 @@ export const adminController = {
           },
         },
       });
+
+      // Push: EV driver assigned
+      notifyUser(updatedOrder.userId, 'Driver assigned', `A driver is assigned to your EV charging order #${updatedOrder.orderNumber}.`, { type: 'charging_assigned', orderId: id }).catch(() => {});
+      notifyDriver(driverId, 'New EV charging job', `You’re assigned to EV order #${updatedOrder.orderNumber}. Open the app to view details.`, { type: 'charging_assigned', orderId: id }).catch(() => {});
 
       res.json({ order: updatedOrder });
     } catch (error: any) {

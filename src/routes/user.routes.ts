@@ -9,6 +9,7 @@ router.use(authenticate); // All routes require authentication
 router.get('/me', userController.getProfile);
 router.put('/me', userController.updateProfile);
 router.put('/me/password', userController.changePassword);
+router.post('/me/push-token', userController.registerPushToken);
 
 export default router;
 

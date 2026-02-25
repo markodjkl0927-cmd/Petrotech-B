@@ -111,5 +111,28 @@ export const userController = {
       res.status(500).json({ error: error.message || 'Failed to change password' });
     }
   },
+
+  async registerPushToken(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { token, platform } = req.body as { token?: string; platform?: string };
+      if (!token || typeof token !== 'string' || !platform || !['ios', 'android', 'web'].includes(platform)) {
+        return res.status(400).json({ error: 'token and platform (ios|android|web) are required' });
+      }
+
+      await prisma.pushToken.upsert({
+        where: { token },
+        create: { userId: req.user.userId, token, platform },
+        update: { userId: req.user.userId, platform, updatedAt: new Date() },
+      });
+
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to register push token' });
+    }
+  },
 };
 

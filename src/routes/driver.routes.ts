@@ -40,6 +40,9 @@ router.get('/me', driverController.getMe);
 router.put('/me', driverController.updateMe);
 router.post('/me/photo', upload.single('photo'), driverController.uploadPhoto);
 
+// Push notifications
+router.post('/me/push-token', driverController.registerPushToken);
+
 // Live location (MVP)
 router.post('/location', driverController.updateLocation);
 
