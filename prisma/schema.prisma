@@ -84,8 +84,24 @@ model Driver {
   location               DriverLocation?
   payouts                DriverPayout[]
   pushTokens             PushToken[]
+  notifications          DriverNotification[]
 
   @@map("drivers")
+}
+
+model DriverNotification {
+  id        String    @id @default(uuid())
+  driverId  String
+  type      String    // order_assigned, order_status, charging_assigned, charging_status, payout_succeeded, payout_failed
+  title     String
+  body      String
+  data      String?   // JSON: orderId, etc.
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_notifications")
 }
 
 model PushToken {

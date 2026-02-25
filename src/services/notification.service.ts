@@ -97,16 +97,32 @@ export async function notifyUser(
 }
 
 /**
- * Notify a driver (by driverId). No-op if no tokens.
+ * Notify a driver (by driverId). Sends push and saves to notification history for in-app list.
  */
 export async function notifyDriver(
   driverId: string,
   title: string,
   body: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
+  type?: string
 ): Promise<void> {
+  const notifType = type ?? (data?.type as string) ?? 'info';
+
+  await prisma.driverNotification.create({
+    data: {
+      driverId,
+      type: notifType,
+      title,
+      body,
+      data: data ? JSON.stringify(data) : null,
+    },
+  });
+
   const tokens = await getExpoTokensByDriverId(driverId);
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.warn('[notification] No push tokens for driver', driverId, '- driver app may be in Expo Go or not logged in with notifications enabled');
+    return;
+  }
   await sendExpoPushNotifications(
     tokens.map((to) => ({
       to,

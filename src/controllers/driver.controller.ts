@@ -626,5 +626,71 @@ export const driverController = {
       res.status(500).json({ error: error.message || 'Failed to register push token' });
     }
   },
+
+  async getNotifications(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const notifications = await prisma.driverNotification.findMany({
+        where: { driverId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      });
+      const unreadCount = await prisma.driverNotification.count({
+        where: { driverId, readAt: null },
+      });
+      res.json({
+        notifications: notifications.map((n) => ({
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          data: (() => {
+            if (!n.data) return null;
+            try {
+              return JSON.parse(n.data);
+            } catch {
+              return null;
+            }
+          })(),
+          readAt: n.readAt,
+          createdAt: n.createdAt,
+        })),
+        unreadCount,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to load notifications' });
+    }
+  },
+
+  async markNotificationRead(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const { id } = req.params;
+      await prisma.driverNotification.updateMany({
+        where: { id, driverId },
+        data: { readAt: new Date() },
+      });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to mark as read' });
+    }
+  },
+
+  async markAllNotificationsRead(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      await prisma.driverNotification.updateMany({
+        where: { driverId, readAt: null },
+        data: { readAt: new Date() },
+      });
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to mark all as read' });
+    }
+  },
 };
 
