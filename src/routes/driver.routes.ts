@@ -42,6 +42,7 @@ router.post('/me/photo', upload.single('photo'), driverController.uploadPhoto);
 
 // Push notifications
 router.post('/me/push-token', driverController.registerPushToken);
+router.get('/me/push-token/status', driverController.getPushTokenStatus);
 router.get('/me/notifications', driverController.getNotifications);
 router.patch('/me/notifications/read-all', driverController.markAllNotificationsRead);
 router.patch('/me/notifications/:id/read', driverController.markNotificationRead);

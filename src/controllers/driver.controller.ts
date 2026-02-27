@@ -621,9 +621,23 @@ export const driverController = {
         create: { driverId, token, platform },
         update: { driverId, platform, updatedAt: new Date() },
       });
+      console.log('[notification] Driver', driverId, 'registered push token (' + platform + ')');
       res.json({ ok: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to register push token' });
+    }
+  },
+
+  async getPushTokenStatus(req: Request, res: Response) {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+      const driverId = req.user.userId;
+      const count = await prisma.pushToken.count({
+        where: { driverId, token: { startsWith: 'ExponentPushToken[' } },
+      });
+      res.json({ hasPushToken: count > 0 });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to get push status' });
     }
   },
 
