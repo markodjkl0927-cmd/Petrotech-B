@@ -120,9 +120,10 @@ export async function notifyDriver(
 
   const tokens = await getExpoTokensByDriverId(driverId);
   if (tokens.length === 0) {
-    console.warn('[notification] No push tokens for driver', driverId, '- driver app may be in Expo Go or not logged in with notifications enabled');
+    console.warn('[notification] No push tokens for driver', driverId, '- driver will not get push. Use a dev/production build (not Expo Go), allow notifications, and ensure driver opened the app after login.');
     return;
   }
+  console.log('[notification] Sending push to driver', driverId, '(', tokens.length, 'device(s))');
   await sendExpoPushNotifications(
     tokens.map((to) => ({
       to,
