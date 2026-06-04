@@ -97,6 +97,51 @@ async function main() {
 
   console.log('Sample driver created! Email: driver1@petrotech.com, Password: driver123');
 
+  // R&P Global Energies portal
+  const rpAdminPassword = await bcrypt.hash(process.env.RP_ADMIN_PASSWORD || 'rpadmin123', 10);
+  await prisma.rpAdmin.upsert({
+    where: { email: 'admin@randpglobalenergies.com' },
+    update: {},
+    create: {
+      email: 'admin@randpglobalenergies.com',
+      password: rpAdminPassword,
+      firstName: 'R&P',
+      lastName: 'Admin',
+      isActive: true,
+    },
+  });
+  console.log('R&P admin: admin@randpglobalenergies.com / rpadmin123');
+
+  const sampleLocations = [
+    { state: 'Texas', city: 'Houston', address: '1200 Main St', name: 'R&P Fuel — Downtown' },
+    { state: 'Texas', city: 'Dallas', address: '450 Commerce St', name: 'R&P Fuel — Dallas' },
+    { state: 'California', city: 'Los Angeles', address: '800 Sunset Blvd', name: 'R&P Fuel — LA' },
+  ];
+  for (const loc of sampleLocations) {
+    const existing = await prisma.rpFuelLocation.findFirst({
+      where: { state: loc.state, city: loc.city, address: loc.address },
+    });
+    if (!existing) {
+      await prisma.rpFuelLocation.create({ data: loc });
+    }
+  }
+  console.log('R&P sample fuel locations created');
+
+  const jobCount = await prisma.rpCareerJob.count();
+  if (jobCount === 0) {
+    await prisma.rpCareerJob.create({
+      data: {
+        title: 'Fuel Station Associate',
+        description:
+          'Join our team at R&P Global Energies. We are looking for motivated associates to support daily operations at our fuel stations.',
+        location: 'Houston, TX',
+        department: 'Operations',
+        isActive: true,
+      },
+    });
+  }
+  console.log('R&P sample career job created');
+
   console.log('Seeding completed!');
 }
 

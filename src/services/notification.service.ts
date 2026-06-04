@@ -74,14 +74,25 @@ export async function getExpoTokensByDriverId(driverId: string): Promise<string[
 }
 
 /**
- * Notify a customer (by userId). No-op if no tokens.
+ * Notify a customer (by userId). Saves to notification history for in-app list; sends push if tokens exist.
  */
 export async function notifyUser(
   userId: string,
   title: string,
   body: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
+  type?: string
 ): Promise<void> {
+  const notifType = type ?? (data?.type as string) ?? 'info';
+  await prisma.userNotification.create({
+    data: {
+      userId,
+      type: notifType,
+      title,
+      body,
+      data: data ? JSON.stringify(data) : null,
+    },
+  });
   const tokens = await getExpoTokensByUserId(userId);
   if (tokens.length === 0) return;
   await sendExpoPushNotifications(

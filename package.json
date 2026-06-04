@@ -39,6 +39,9 @@
     "stripe": "^20.2.0",
     "zod": "^3.22.0"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",

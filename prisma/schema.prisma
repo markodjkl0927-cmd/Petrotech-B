@@ -23,8 +23,24 @@ model User {
   chargingOrders ChargingOrder[]
   cars           Car[]
   pushTokens     PushToken[]
+  notifications  UserNotification[]
 
   @@map("users")
+}
+
+model UserNotification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String    // order_assigned, order_status, charging_assigned, charging_status
+  title     String
+  body      String
+  data      String?   // JSON: orderId, etc.
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_notifications")
 }
 
 model Address {
@@ -331,4 +347,95 @@ enum ChargingDuration {
   TWO_HOURS
   FIVE_HOURS
   TWENTY_FOUR_HOURS
+}
+
+// --- R&P Global Energies (separate member portal) ---
+
+model RpMember {
+  id               String   @id @default(uuid())
+  accountNumber    String   @unique @db.VarChar(10)
+  password         String
+  email            String   @unique
+  firstName        String
+  lastName         String
+  phone            String?
+  isActive         Boolean  @default(true)
+  stripeCustomerId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dealershipApplications RpDealershipApplication[]
+  careerApplications     RpCareerApplication[]
+
+  @@map("rp_members")
+}
+
+model RpAdmin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rp_admins")
+}
+
+model RpFuelLocation {
+  id        String   @id @default(uuid())
+  state     String
+  city      String
+  address   String
+  name      String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([state, city])
+  @@map("rp_fuel_locations")
+}
+
+model RpCareerJob {
+  id           String   @id @default(uuid())
+  title        String
+  description  String   @db.Text
+  location     String?
+  department   String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  applications RpCareerApplication[]
+
+  @@map("rp_career_jobs")
+}
+
+model RpCareerApplication {
+  id          String   @id @default(uuid())
+  jobId       String
+  memberId    String
+  resumeUrl   String
+  coverLetter String?  @db.Text
+  status      String   @default("NEW")
+  createdAt   DateTime @default(now())
+
+  job    RpCareerJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  member RpMember    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("rp_career_applications")
+}
+
+model RpDealershipApplication {
+  id        String   @id @default(uuid())
+  memberId  String
+  answers   Json
+  status    String   @default("NEW")
+  createdAt DateTime @default(now())
+
+  member RpMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("rp_dealership_applications")
 }
