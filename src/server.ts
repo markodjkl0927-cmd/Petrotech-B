@@ -78,7 +78,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 app.listen(PORT, () => {
+  const smtpReady = !!(process.env.SMTP_HOST?.trim() && process.env.SMTP_PASS?.trim());
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📝 API Documentation: http://localhost:${PORT}/api`);
+  console.log(
+    smtpReady
+      ? `[R&P email] SMTP enabled (from: ${process.env.SMTP_FROM || 'noreply@randpglobalenergies.com'})`
+      : '[R&P email] SMTP not configured — emails will log to console only'
+  );
 });
 
