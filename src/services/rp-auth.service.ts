@@ -30,8 +30,30 @@ export type RpAdminAuthResponse = {
   token: string;
 };
 
+const RECOVERY_GENERIC_MESSAGE =
+  'If an account exists for that email, we sent instructions. Check your inbox and spam folder.';
+
 function signRpToken(payload: { userId: string; role: 'RP_MEMBER' | 'RP_ADMIN'; email?: string; accountNumber?: string }) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as any);
+}
+
+function getPortalUrl(): string {
+  return (process.env.RP_PORTAL_URL || process.env.FRONTEND_URL || 'https://randpglobalenergies.com').replace(
+    /\/$/,
+    ''
+  );
+}
+
+function signPasswordResetToken(memberId: string, email: string): string {
+  return jwt.sign({ userId: memberId, email, purpose: 'RP_PASSWORD_RESET' }, JWT_SECRET, { expiresIn: '1h' } as any);
+}
+
+async function sendRecoveryEmail(to: string, subject: string, lines: string[]): Promise<void> {
+  try {
+    await sendEmail({ to, subject, text: lines.join('\n') });
+  } catch (emailError) {
+    console.error('[R&P recovery] email failed', { to, subject, error: emailError });
+  }
 }
 
 export const rpAuthService = {
@@ -179,5 +201,96 @@ export const rpAuthService = {
       },
       token,
     };
+  },
+
+  async recoverAccountNumber(email: string): Promise<{ message: string }> {
+    const normalized = email.toLowerCase().trim();
+    const member = await prisma.rpMember.findUnique({
+      where: { email: normalized },
+    });
+
+    if (member?.isActive) {
+      const displayNumber = formatAccountNumberDisplay(member.accountNumber);
+      await sendRecoveryEmail(normalized, 'Your R&P Global Energies account number', [
+        `Hello ${member.firstName},`,
+        '',
+        'You requested a reminder of your member account number.',
+        '',
+        `Your 10-digit account number is: ${member.accountNumber}`,
+        `(Formatted: ${displayNumber})`,
+        '',
+        'Use this account number with your password to sign in at the member portal.',
+        '',
+        'If you did not request this, you can ignore this email.',
+        '',
+        'Thank you,',
+        'R&P Global Energies',
+      ]);
+    }
+
+    return { message: RECOVERY_GENERIC_MESSAGE };
+  },
+
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    const normalized = email.toLowerCase().trim();
+    const member = await prisma.rpMember.findUnique({
+      where: { email: normalized },
+    });
+
+    if (member?.isActive) {
+      const token = signPasswordResetToken(member.id, member.email);
+      const resetUrl = `${getPortalUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+      await sendRecoveryEmail(normalized, 'Reset your R&P Global Energies password', [
+        `Hello ${member.firstName},`,
+        '',
+        'You requested to reset your member portal password.',
+        '',
+        'Open this link to choose a new password (valid for 1 hour):',
+        resetUrl,
+        '',
+        'If you did not request this, you can ignore this email.',
+        '',
+        'Thank you,',
+        'R&P Global Energies',
+      ]);
+    }
+
+    return { message: RECOVERY_GENERIC_MESSAGE };
+  },
+
+  async resetPassword(token: string, password: string): Promise<{ message: string }> {
+    if (!token?.trim()) {
+      throw new Error('Reset token is required');
+    }
+    if (password.length < 8) {
+      throw new Error('Password must be at least 8 characters');
+    }
+
+    let decoded: jwt.JwtPayload;
+    try {
+      decoded = jwt.verify(token.trim(), JWT_SECRET) as jwt.JwtPayload;
+    } catch {
+      throw new Error('Invalid or expired reset link. Please request a new one.');
+    }
+
+    if (decoded.purpose !== 'RP_PASSWORD_RESET' || !decoded.userId) {
+      throw new Error('Invalid or expired reset link. Please request a new one.');
+    }
+
+    const member = await prisma.rpMember.findUnique({
+      where: { id: String(decoded.userId) },
+    });
+
+    if (!member || !member.isActive) {
+      throw new Error('Invalid or expired reset link. Please request a new one.');
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await prisma.rpMember.update({
+      where: { id: member.id },
+      data: { password: hashedPassword },
+    });
+
+    return { message: 'Password updated. You can sign in with your account number and new password.' };
   },
 };

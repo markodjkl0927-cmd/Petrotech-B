@@ -56,6 +56,11 @@ router.get('/email/status', (_req, res) => {
 router.post('/auth/register', rpAuthController.register);
 router.post('/auth/login', rpAuthController.login);
 router.post('/auth/admin/login', rpAuthController.adminLogin);
+router.post('/auth/recover-account', rpAuthController.recoverAccount);
+router.post('/auth/forgot-password', rpAuthController.forgotPassword);
+router.post('/auth/reset-password', rpAuthController.resetPassword);
+
+console.log('[R&P routes] account recovery: POST /api/rp/auth/recover-account, /forgot-password, /reset-password');
 
 // Public locator (no login required to browse stations)
 router.get('/locator/states', rpLocatorController.listStates);

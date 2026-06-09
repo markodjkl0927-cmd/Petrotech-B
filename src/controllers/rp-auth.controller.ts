@@ -49,4 +49,46 @@ export const rpAuthController = {
       res.status(401).json({ error: error.message || 'Login failed' });
     }
   },
+
+  async recoverAccount(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
+      const result = await rpAuthService.recoverAccountNumber(email);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || 'Request failed' });
+    }
+  },
+
+  async forgotPassword(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
+      const result = await rpAuthService.requestPasswordReset(email);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || 'Request failed' });
+    }
+  },
+
+  async resetPassword(req: Request, res: Response) {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) {
+        return res.status(400).json({ error: 'Token and new password are required' });
+      }
+      if (String(password).length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters' });
+      }
+      const result = await rpAuthService.resetPassword(token, password);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || 'Password reset failed' });
+    }
+  },
 };
