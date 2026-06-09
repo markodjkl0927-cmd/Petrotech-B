@@ -63,23 +63,31 @@ export const rpAuthService = {
     });
 
     const displayNumber = formatAccountNumberDisplay(accountNumber);
-    await sendEmail({
-      to: email,
-      subject: 'Your R&P Global Energies account number',
-      text: [
-        `Hello ${member.firstName},`,
-        '',
-        'Welcome to R&P Global Energies.',
-        '',
-        `Your 10-digit account number is: ${accountNumber}`,
-        `(Formatted: ${displayNumber})`,
-        '',
-        'Use this account number with your password to sign in to the member portal.',
-        '',
-        'Thank you,',
-        'R&P Global Energies',
-      ].join('\n'),
-    });
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'Your R&P Global Energies account number',
+        text: [
+          `Hello ${member.firstName},`,
+          '',
+          'Welcome to R&P Global Energies.',
+          '',
+          `Your 10-digit account number is: ${accountNumber}`,
+          `(Formatted: ${displayNumber})`,
+          '',
+          'Use this account number with your password to sign in to the member portal.',
+          '',
+          'Thank you,',
+          'R&P Global Energies',
+        ].join('\n'),
+      });
+    } catch (emailError) {
+      console.error('[R&P register] account created but welcome email failed', {
+        memberId: member.id,
+        email,
+        error: emailError,
+      });
+    }
 
     const token = signRpToken({
       userId: member.id,

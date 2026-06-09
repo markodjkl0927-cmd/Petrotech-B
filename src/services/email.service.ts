@@ -18,6 +18,9 @@ function getTransporter(): Transporter {
         user: process.env.SMTP_USER || 'resend',
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     });
   }
   return transporter;

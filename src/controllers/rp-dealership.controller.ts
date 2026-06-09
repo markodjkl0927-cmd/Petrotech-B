@@ -39,21 +39,29 @@ export const rpDealershipController = {
         'admin@randpglobalenergies.com';
 
       const summary = JSON.stringify(answers, null, 2);
-      await sendEmail({
-        to: notifyEmail,
-        subject: `New R&P Dealership application — ${application.member.firstName} ${application.member.lastName}`,
-        text: [
-          'A new dealership program application was submitted.',
-          '',
-          `Member: ${application.member.firstName} ${application.member.lastName}`,
-          `Account: ${application.member.accountNumber}`,
-          `Email: ${application.member.email}`,
-          `Phone: ${application.member.phone || '—'}`,
-          '',
-          'Answers:',
-          summary,
-        ].join('\n'),
-      });
+      try {
+        await sendEmail({
+          to: notifyEmail,
+          subject: `New R&P Dealership application — ${application.member.firstName} ${application.member.lastName}`,
+          text: [
+            'A new dealership program application was submitted.',
+            '',
+            `Member: ${application.member.firstName} ${application.member.lastName}`,
+            `Account: ${application.member.accountNumber}`,
+            `Email: ${application.member.email}`,
+            `Phone: ${application.member.phone || '—'}`,
+            '',
+            'Answers:',
+            summary,
+          ].join('\n'),
+        });
+      } catch (emailError) {
+        console.error('[R&P dealership] application saved but notify email failed', {
+          applicationId: application.id,
+          notifyEmail,
+          error: emailError,
+        });
+      }
 
       res.status(201).json({ application: { id: application.id, status: application.status } });
     } catch (error: any) {
