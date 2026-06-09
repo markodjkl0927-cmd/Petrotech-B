@@ -44,6 +44,7 @@ app.get('/health', (req, res) => {
 
 // API Routes
 import apiRoutes from './routes';
+import { getEmailTransport } from './services/email.service';
 app.use('/api', apiRoutes);
 
 app.get('/api', (req, res) => {
@@ -78,13 +79,16 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 app.listen(PORT, () => {
-  const smtpReady = !!(process.env.SMTP_HOST?.trim() && process.env.SMTP_PASS?.trim());
+  const transport = getEmailTransport();
+  const from = process.env.SMTP_FROM || 'noreply@randpglobalenergies.com';
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📝 API Documentation: http://localhost:${PORT}/api`);
-  console.log(
-    smtpReady
-      ? `[R&P email] SMTP enabled (from: ${process.env.SMTP_FROM || 'noreply@randpglobalenergies.com'})`
-      : '[R&P email] SMTP not configured — emails will log to console only'
-  );
+  if (transport === 'resend-api') {
+    console.log(`[R&P email] Resend API enabled (from: ${from})`);
+  } else if (transport === 'smtp') {
+    console.log(`[R&P email] SMTP enabled (from: ${from})`);
+  } else {
+    console.log('[R&P email] Not configured — emails will log to console only');
+  }
 });
 

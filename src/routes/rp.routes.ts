@@ -9,6 +9,7 @@ import { rpLocatorController } from '../controllers/rp-locator.controller';
 import { rpCareerController } from '../controllers/rp-career.controller';
 import { rpDealershipController } from '../controllers/rp-dealership.controller';
 import { rpAdminController } from '../controllers/rp-admin.controller';
+import { getEmailTransport } from '../services/email.service';
 
 const router = Router();
 
@@ -38,13 +39,16 @@ const careerUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-// Public — verify SMTP env is loaded on production (no secrets exposed)
+// Public — verify email env is loaded on production (no secrets exposed)
 router.get('/email/status', (_req, res) => {
-  const smtpConfigured = !!(process.env.SMTP_HOST?.trim() && process.env.SMTP_PASS?.trim());
   res.json({
-    smtpConfigured,
-    smtpFrom: process.env.SMTP_FROM?.trim() || 'noreply@randpglobalenergies.com',
-    smtpHost: process.env.SMTP_HOST?.trim() || null,
+    configured: getEmailTransport() !== 'none',
+    transport: getEmailTransport(),
+    from: process.env.SMTP_FROM?.trim() || 'noreply@randpglobalenergies.com',
+    note:
+      getEmailTransport() === 'resend-api'
+        ? 'Uses Resend HTTP API (required on Render — SMTP port 587 is blocked)'
+        : undefined,
   });
 });
 
