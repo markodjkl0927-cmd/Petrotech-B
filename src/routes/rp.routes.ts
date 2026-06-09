@@ -38,6 +38,16 @@ const careerUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+// Public — verify SMTP env is loaded on production (no secrets exposed)
+router.get('/email/status', (_req, res) => {
+  const smtpConfigured = !!(process.env.SMTP_HOST?.trim() && process.env.SMTP_PASS?.trim());
+  res.json({
+    smtpConfigured,
+    smtpFrom: process.env.SMTP_FROM?.trim() || 'noreply@randpglobalenergies.com',
+    smtpHost: process.env.SMTP_HOST?.trim() || null,
+  });
+});
+
 // Public auth
 router.post('/auth/register', rpAuthController.register);
 router.post('/auth/login', rpAuthController.login);
