@@ -73,6 +73,8 @@ router.get('/careers/:id', rpCareerController.getJob);
 
 // Member routes
 router.get('/member/me', authenticate, authorize('RP_MEMBER'), rpMemberController.me);
+router.put('/member/me', authenticate, authorize('RP_MEMBER'), rpMemberController.updateProfile);
+router.put('/member/password', authenticate, authorize('RP_MEMBER'), rpMemberController.changePassword);
 router.get('/member/card', authenticate, authorize('RP_MEMBER'), rpMemberController.card);
 router.post(
   '/careers/:id/apply',
@@ -91,6 +93,7 @@ router.post(
 // Admin routes
 router.use('/admin', authenticate, authorize('RP_ADMIN'));
 
+router.get('/admin/dashboard/stats', rpAdminController.getDashboardStats);
 router.get('/admin/locations', rpAdminController.listLocations);
 router.post('/admin/locations', rpAdminController.createLocation);
 router.put('/admin/locations/:id', rpAdminController.updateLocation);
@@ -101,8 +104,13 @@ router.post('/admin/careers', rpAdminController.createJob);
 router.put('/admin/careers/:id', rpAdminController.updateJob);
 router.delete('/admin/careers/:id', rpAdminController.deleteJob);
 router.get('/admin/career-applications', rpAdminController.listCareerApplications);
+router.patch('/admin/career-applications/:id', rpAdminController.updateCareerStatus);
 
 router.get('/admin/dealership-applications', rpAdminController.listDealershipApplications);
 router.patch('/admin/dealership-applications/:id', rpAdminController.updateDealershipStatus);
+
+router.get('/admin/members', rpAdminController.listMembers);
+router.get('/admin/members/:id', rpAdminController.getMember);
+router.patch('/admin/members/:id', rpAdminController.updateMember);
 
 export default router;

@@ -1,23 +1,116 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { formatAccountNumberDisplay } from '../lib/rp-account';
+
+const PENDING_DEALERSHIP_STATUSES = ['NEW', 'UNDER_REVIEW'];
+const PENDING_CAREER_STATUSES = ['NEW', 'UNDER_REVIEW', 'INTERVIEW'];
+
+function parsePageQuery(req: Request) {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+  return { page, limit, skip: (page - 1) * limit };
+}
 
 export const rpAdminController = {
+  async getDashboardStats(_req: Request, res: Response) {
+    try {
+      const [
+        membersTotal,
+        membersActive,
+        locationsTotal,
+        locationsActive,
+        careerJobsTotal,
+        careerJobsActive,
+        dealershipApplicationsTotal,
+        dealershipApplicationsPending,
+        careerApplicationsTotal,
+        careerApplicationsPending,
+      ] = await Promise.all([
+        prisma.rpMember.count(),
+        prisma.rpMember.count({ where: { isActive: true } }),
+        prisma.rpFuelLocation.count(),
+        prisma.rpFuelLocation.count({ where: { isActive: true } }),
+        prisma.rpCareerJob.count(),
+        prisma.rpCareerJob.count({ where: { isActive: true } }),
+        prisma.rpDealershipApplication.count(),
+        prisma.rpDealershipApplication.count({
+          where: { status: { in: PENDING_DEALERSHIP_STATUSES } },
+        }),
+        prisma.rpCareerApplication.count(),
+        prisma.rpCareerApplication.count({
+          where: { status: { in: PENDING_CAREER_STATUSES } },
+        }),
+      ]);
+
+      res.json({
+        stats: {
+          members: {
+            total: membersTotal,
+            active: membersActive,
+            inactive: membersTotal - membersActive,
+          },
+          locations: {
+            total: locationsTotal,
+            active: locationsActive,
+          },
+          careerJobs: {
+            total: careerJobsTotal,
+            active: careerJobsActive,
+          },
+          dealershipApplications: {
+            total: dealershipApplicationsTotal,
+            pending: dealershipApplicationsPending,
+          },
+          careerApplications: {
+            total: careerApplicationsTotal,
+            pending: careerApplicationsPending,
+          },
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch dashboard stats' });
+    }
+  },
+
   async listLocations(req: Request, res: Response) {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
-      const skip = (page - 1) * limit;
+      const { page, limit, skip } = parsePageQuery(req);
+      const q = String(req.query.q || '').trim();
+      const state = String(req.query.state || '').trim();
+
+      const where: {
+        state?: { contains: string; mode: 'insensitive' };
+        OR?: Array<{
+          state?: { contains: string; mode: 'insensitive' };
+          city?: { contains: string; mode: 'insensitive' };
+          address?: { contains: string; mode: 'insensitive' };
+          name?: { contains: string; mode: 'insensitive' };
+        }>;
+      } = {};
+
+      if (state) {
+        where.state = { contains: state, mode: 'insensitive' };
+      } else if (q) {
+        where.OR = [
+          { state: { contains: q, mode: 'insensitive' } },
+          { city: { contains: q, mode: 'insensitive' } },
+          { address: { contains: q, mode: 'insensitive' } },
+          { name: { contains: q, mode: 'insensitive' } },
+        ];
+      }
+
       const [locations, total] = await Promise.all([
         prisma.rpFuelLocation.findMany({
+          where,
           orderBy: [{ state: 'asc' }, { city: 'asc' }, { address: 'asc' }],
           skip,
           take: limit,
         }),
-        prisma.rpFuelLocation.count(),
+        prisma.rpFuelLocation.count({ where }),
       ]);
       res.json({
         locations,
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to fetch locations' });
@@ -77,10 +170,46 @@ export const rpAdminController = {
     }
   },
 
-  async listJobs(_req: Request, res: Response) {
+  async listJobs(req: Request, res: Response) {
     try {
-      const jobs = await prisma.rpCareerJob.findMany({ orderBy: { createdAt: 'desc' } });
-      res.json({ jobs });
+      const { page, limit, skip } = parsePageQuery(req);
+      const q = String(req.query.q || '').trim();
+      const status = String(req.query.status || 'all').toLowerCase();
+
+      const where: {
+        isActive?: boolean;
+        OR?: Array<{
+          title?: { contains: string; mode: 'insensitive' };
+          location?: { contains: string; mode: 'insensitive' };
+          department?: { contains: string; mode: 'insensitive' };
+        }>;
+      } = {};
+
+      if (status === 'active') where.isActive = true;
+      if (status === 'inactive') where.isActive = false;
+
+      if (q) {
+        where.OR = [
+          { title: { contains: q, mode: 'insensitive' } },
+          { location: { contains: q, mode: 'insensitive' } },
+          { department: { contains: q, mode: 'insensitive' } },
+        ];
+      }
+
+      const [jobs, total] = await Promise.all([
+        prisma.rpCareerJob.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.rpCareerJob.count({ where }),
+      ]);
+
+      res.json({
+        jobs,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to fetch jobs' });
     }
@@ -137,10 +266,193 @@ export const rpAdminController = {
     }
   },
 
-  async listCareerApplications(_req: Request, res: Response) {
+  async listCareerApplications(req: Request, res: Response) {
     try {
-      const applications = await prisma.rpCareerApplication.findMany({
-        orderBy: { createdAt: 'desc' },
+      const { page, limit, skip } = parsePageQuery(req);
+      const q = String(req.query.q || '').trim();
+      const status = String(req.query.status || 'all').toUpperCase().trim();
+
+      const where: {
+        status?: string;
+        OR?: Array<{
+          member?: {
+            email?: { contains: string; mode: 'insensitive' };
+            firstName?: { contains: string; mode: 'insensitive' };
+            lastName?: { contains: string; mode: 'insensitive' };
+            accountNumber?: { contains: string };
+          };
+          job?: { title?: { contains: string; mode: 'insensitive' } };
+        }>;
+      } = {};
+
+      if (status && status !== 'ALL') {
+        where.status = status;
+      }
+
+      if (q) {
+        const digits = q.replace(/\D/g, '');
+        where.OR = [
+          { member: { email: { contains: q, mode: 'insensitive' } } },
+          { member: { firstName: { contains: q, mode: 'insensitive' } } },
+          { member: { lastName: { contains: q, mode: 'insensitive' } } },
+          { job: { title: { contains: q, mode: 'insensitive' } } },
+        ];
+        if (digits) {
+          where.OR.push({ member: { accountNumber: { contains: digits } } });
+        }
+      }
+
+      const [applications, total] = await Promise.all([
+        prisma.rpCareerApplication.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+            job: { select: { title: true } },
+            member: {
+              select: {
+                accountNumber: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+              },
+            },
+          },
+        }),
+        prisma.rpCareerApplication.count({ where }),
+      ]);
+
+      res.json({
+        applications,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch applications' });
+    }
+  },
+
+  async listDealershipApplications(req: Request, res: Response) {
+    try {
+      const { page, limit, skip } = parsePageQuery(req);
+      const q = String(req.query.q || '').trim();
+      const status = String(req.query.status || 'all').toUpperCase().trim();
+
+      const where: {
+        status?: string;
+        OR?: Array<{
+          member?: {
+            email?: { contains: string; mode: 'insensitive' };
+            firstName?: { contains: string; mode: 'insensitive' };
+            lastName?: { contains: string; mode: 'insensitive' };
+            accountNumber?: { contains: string };
+          };
+        }>;
+      } = {};
+
+      if (status && status !== 'ALL') {
+        where.status = status;
+      }
+
+      if (q) {
+        const digits = q.replace(/\D/g, '');
+        where.OR = [
+          { member: { email: { contains: q, mode: 'insensitive' } } },
+          { member: { firstName: { contains: q, mode: 'insensitive' } } },
+          { member: { lastName: { contains: q, mode: 'insensitive' } } },
+        ];
+        if (digits) {
+          where.OR.push({ member: { accountNumber: { contains: digits } } });
+        }
+      }
+
+      const [applications, total] = await Promise.all([
+        prisma.rpDealershipApplication.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+            member: {
+              select: {
+                accountNumber: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+              },
+            },
+          },
+        }),
+        prisma.rpDealershipApplication.count({ where }),
+      ]);
+
+      res.json({
+        applications,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch applications' });
+    }
+  },
+
+  async updateDealershipStatus(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      if (!status) {
+        return res.status(400).json({ error: 'Status is required' });
+      }
+
+      const normalized = String(status).toUpperCase().trim();
+      const allowed = ['NEW', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'];
+      if (!allowed.includes(normalized)) {
+        return res.status(400).json({
+          error: `Invalid status. Allowed: ${allowed.join(', ')}`,
+        });
+      }
+
+      const application = await prisma.rpDealershipApplication.update({
+        where: { id },
+        data: { status: normalized },
+        include: {
+          member: {
+            select: {
+              accountNumber: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+            },
+          },
+        },
+      });
+      res.json({ application });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || 'Failed to update application' });
+    }
+  },
+
+  async updateCareerStatus(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      if (!status) {
+        return res.status(400).json({ error: 'Status is required' });
+      }
+
+      const normalized = String(status).toUpperCase().trim();
+      const allowed = ['NEW', 'UNDER_REVIEW', 'INTERVIEW', 'HIRED', 'REJECTED'];
+      if (!allowed.includes(normalized)) {
+        return res.status(400).json({
+          error: `Invalid status. Allowed: ${allowed.join(', ')}`,
+        });
+      }
+
+      const application = await prisma.rpCareerApplication.update({
+        where: { id },
+        data: { status: normalized },
         include: {
           job: { select: { title: true } },
           member: {
@@ -154,48 +466,172 @@ export const rpAdminController = {
           },
         },
       });
-      res.json({ applications });
+      res.json({ application });
     } catch (error: any) {
-      res.status(500).json({ error: error.message || 'Failed to fetch applications' });
+      res.status(400).json({ error: error.message || 'Failed to update application' });
     }
   },
 
-  async listDealershipApplications(_req: Request, res: Response) {
+  async listMembers(req: Request, res: Response) {
     try {
-      const applications = await prisma.rpDealershipApplication.findMany({
-        orderBy: { createdAt: 'desc' },
-        include: {
-          member: {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const skip = (page - 1) * limit;
+      const q = String(req.query.q || '').trim();
+      const status = String(req.query.status || 'all').toLowerCase();
+
+      const where: {
+        isActive?: boolean;
+        OR?: Array<{
+          email?: { contains: string; mode: 'insensitive' };
+          firstName?: { contains: string; mode: 'insensitive' };
+          lastName?: { contains: string; mode: 'insensitive' };
+          accountNumber?: { contains: string };
+        }>;
+      } = {};
+
+      if (status === 'active') where.isActive = true;
+      if (status === 'inactive') where.isActive = false;
+
+      if (q) {
+        const digits = q.replace(/\D/g, '');
+        where.OR = [
+          { email: { contains: q, mode: 'insensitive' } },
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+        ];
+        if (digits) {
+          where.OR.push({ accountNumber: { contains: digits } });
+        }
+      }
+
+      const [members, total] = await Promise.all([
+        prisma.rpMember.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            accountNumber: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+            _count: {
+              select: {
+                dealershipApplications: true,
+                careerApplications: true,
+              },
+            },
+          },
+        }),
+        prisma.rpMember.count({ where }),
+      ]);
+
+      res.json({
+        members: members.map((m) => ({
+          ...m,
+          accountNumberDisplay: formatAccountNumberDisplay(m.accountNumber),
+        })),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to fetch members' });
+    }
+  },
+
+  async getMember(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const member = await prisma.rpMember.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          accountNumber: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
             select: {
-              accountNumber: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              phone: true,
+              dealershipApplications: true,
+              careerApplications: true,
+            },
+          },
+          dealershipApplications: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+            select: { id: true, status: true, createdAt: true },
+          },
+          careerApplications: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+            include: { job: { select: { title: true } } },
+          },
+        },
+      });
+
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+
+      res.json({
+        member: {
+          ...member,
+          accountNumberDisplay: formatAccountNumberDisplay(member.accountNumber),
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to load member' });
+    }
+  },
+
+  async updateMember(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { isActive } = req.body;
+
+      if (isActive === undefined) {
+        return res.status(400).json({ error: 'isActive is required' });
+      }
+
+      const member = await prisma.rpMember.update({
+        where: { id },
+        data: { isActive: !!isActive },
+        select: {
+          id: true,
+          accountNumber: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              dealershipApplications: true,
+              careerApplications: true,
             },
           },
         },
       });
-      res.json({ applications });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || 'Failed to fetch applications' });
-    }
-  },
 
-  async updateDealershipStatus(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
-      if (!status) {
-        return res.status(400).json({ error: 'Status is required' });
-      }
-      const application = await prisma.rpDealershipApplication.update({
-        where: { id },
-        data: { status: String(status) },
+      res.json({
+        member: {
+          ...member,
+          accountNumberDisplay: formatAccountNumberDisplay(member.accountNumber),
+        },
       });
-      res.json({ application });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || 'Failed to update application' });
+      res.status(400).json({ error: error.message || 'Failed to update member' });
     }
   },
 };

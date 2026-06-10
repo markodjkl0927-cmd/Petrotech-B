@@ -1,5 +1,22 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { sendEmail } from '../services/email.service';
+
+function getPortalUrl(): string {
+  return (process.env.RP_PORTAL_URL || process.env.FRONTEND_URL || 'https://randpglobalenergies.com').replace(
+    /\/$/,
+    ''
+  );
+}
+
+function getCareerNotifyEmail(): string {
+  return (
+    process.env.RP_CAREER_NOTIFY_EMAIL ||
+    process.env.RP_DEALERSHIP_NOTIFY_EMAIL ||
+    process.env.RP_ADMIN_EMAIL ||
+    'admin@randpglobalenergies.com'
+  );
+}
 
 export const rpCareerController = {
   async listJobs(_req: Request, res: Response) {
@@ -67,9 +84,52 @@ export const rpCareerController = {
           coverLetter: coverLetter?.trim() || null,
         },
         include: {
-          job: { select: { title: true } },
+          job: { select: { title: true, location: true, department: true } },
+          member: {
+            select: {
+              accountNumber: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+            },
+          },
         },
       });
+
+      const notifyEmail = getCareerNotifyEmail();
+      try {
+        await sendEmail({
+          to: notifyEmail,
+          subject: `New R&P Career application — ${application.job.title} — ${application.member.firstName} ${application.member.lastName}`,
+          text: [
+            'A new career application was submitted.',
+            '',
+            `Position: ${application.job.title}`,
+            `Location: ${application.job.location || '—'}`,
+            `Department: ${application.job.department || '—'}`,
+            '',
+            `Applicant: ${application.member.firstName} ${application.member.lastName}`,
+            `Account: ${application.member.accountNumber}`,
+            `Email: ${application.member.email}`,
+            `Phone: ${application.member.phone || '—'}`,
+            '',
+            'Cover letter:',
+            application.coverLetter?.trim() || '—',
+            '',
+            `Resume file: ${file.originalname || file.filename}`,
+            '',
+            `Review and update status in the admin portal:`,
+            `${getPortalUrl()}/admin/applications`,
+          ].join('\n'),
+        });
+      } catch (emailError) {
+        console.error('[R&P career] application saved but notify email failed', {
+          applicationId: application.id,
+          notifyEmail,
+          error: emailError,
+        });
+      }
 
       res.status(201).json({ application });
     } catch (error: any) {
