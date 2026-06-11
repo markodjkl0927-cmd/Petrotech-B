@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { formatAccountNumberDisplay } from '../lib/rp-account';
 import { geocodeFuelLocation } from '../services/geocoding.service';
+import { sendMemberApplicationStatusEmail } from '../services/rp-application-email.service';
 
 const PENDING_DEALERSHIP_STATUSES = ['NEW', 'UNDER_REVIEW'];
 const PENDING_CAREER_STATUSES = ['NEW', 'UNDER_REVIEW', 'INTERVIEW'];
@@ -485,6 +486,21 @@ export const rpAdminController = {
         });
       }
 
+      const existing = await prisma.rpDealershipApplication.findUnique({
+        where: { id },
+        include: {
+          member: {
+            select: {
+              email: true,
+              firstName: true,
+            },
+          },
+        },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: 'Application not found' });
+      }
+
       const application = await prisma.rpDealershipApplication.update({
         where: { id },
         data: { status: normalized },
@@ -500,6 +516,29 @@ export const rpAdminController = {
           },
         },
       });
+
+      const answers = (application.answers || {}) as Record<string, unknown>;
+      const companyName =
+        typeof answers.companyName === 'string' && answers.companyName.trim()
+          ? answers.companyName.trim()
+          : 'your dealership';
+
+      try {
+        await sendMemberApplicationStatusEmail({
+          to: application.member.email,
+          firstName: application.member.firstName,
+          type: 'dealership',
+          title: companyName,
+          status: normalized,
+          previousStatus: existing.status,
+        });
+      } catch (emailError) {
+        console.error('[R&P dealership] status updated but member email failed', {
+          applicationId: application.id,
+          error: emailError,
+        });
+      }
+
       res.json({ application });
     } catch (error: any) {
       res.status(400).json({ error: error.message || 'Failed to update application' });
@@ -522,6 +561,22 @@ export const rpAdminController = {
         });
       }
 
+      const existing = await prisma.rpCareerApplication.findUnique({
+        where: { id },
+        include: {
+          job: { select: { title: true } },
+          member: {
+            select: {
+              email: true,
+              firstName: true,
+            },
+          },
+        },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: 'Application not found' });
+      }
+
       const application = await prisma.rpCareerApplication.update({
         where: { id },
         data: { status: normalized },
@@ -538,6 +593,23 @@ export const rpAdminController = {
           },
         },
       });
+
+      try {
+        await sendMemberApplicationStatusEmail({
+          to: application.member.email,
+          firstName: application.member.firstName,
+          type: 'career',
+          title: application.job.title,
+          status: normalized,
+          previousStatus: existing.status,
+        });
+      } catch (emailError) {
+        console.error('[R&P career] status updated but member email failed', {
+          applicationId: application.id,
+          error: emailError,
+        });
+      }
+
       res.json({ application });
     } catch (error: any) {
       res.status(400).json({ error: error.message || 'Failed to update application' });

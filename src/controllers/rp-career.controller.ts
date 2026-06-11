@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendEmail } from '../services/email.service';
+import { sendMemberApplicationSubmittedEmail } from '../services/rp-application-email.service';
 
 function getPortalUrl(): string {
   return (process.env.RP_PORTAL_URL || process.env.FRONTEND_URL || 'https://randpglobalenergies.com').replace(
@@ -127,6 +128,20 @@ export const rpCareerController = {
         console.error('[R&P career] application saved but notify email failed', {
           applicationId: application.id,
           notifyEmail,
+          error: emailError,
+        });
+      }
+
+      try {
+        await sendMemberApplicationSubmittedEmail({
+          to: application.member.email,
+          firstName: application.member.firstName,
+          type: 'career',
+          title: application.job.title,
+        });
+      } catch (emailError) {
+        console.error('[R&P career] application saved but member confirmation email failed', {
+          applicationId: application.id,
           error: emailError,
         });
       }

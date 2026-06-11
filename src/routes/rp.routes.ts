@@ -76,6 +76,8 @@ router.get('/member/me', authenticate, authorize('RP_MEMBER'), rpMemberControlle
 router.put('/member/me', authenticate, authorize('RP_MEMBER'), rpMemberController.updateProfile);
 router.put('/member/password', authenticate, authorize('RP_MEMBER'), rpMemberController.changePassword);
 router.get('/member/card', authenticate, authorize('RP_MEMBER'), rpMemberController.card);
+router.get('/member/applications', authenticate, authorize('RP_MEMBER'), rpMemberController.listApplications);
+router.get('/member/dashboard/stats', authenticate, authorize('RP_MEMBER'), rpMemberController.getDashboardStats);
 router.post(
   '/careers/:id/apply',
   authenticate,

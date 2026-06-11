@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendEmail } from '../services/email.service';
+import { validateDealershipAnswers } from '../lib/rp-dealership-questionnaire';
+import { sendMemberApplicationSubmittedEmail } from '../services/rp-application-email.service';
 
 export const rpDealershipController = {
   async submit(req: Request, res: Response) {
@@ -10,10 +12,12 @@ export const rpDealershipController = {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const { answers } = req.body;
-      if (!answers || typeof answers !== 'object') {
-        return res.status(400).json({ error: 'Application answers are required' });
+      const validation = validateDealershipAnswers(req.body?.answers);
+      if (validation.ok === false) {
+        return res.status(400).json({ error: validation.error });
       }
+
+      const answers = validation.sanitized;
 
       const application = await prisma.rpDealershipApplication.create({
         data: {
@@ -59,6 +63,26 @@ export const rpDealershipController = {
         console.error('[R&P dealership] application saved but notify email failed', {
           applicationId: application.id,
           notifyEmail,
+          error: emailError,
+        });
+      }
+
+      const submittedAnswers = answers as Record<string, unknown>;
+      const companyName =
+        typeof submittedAnswers.companyName === 'string' && submittedAnswers.companyName.trim()
+          ? submittedAnswers.companyName.trim()
+          : 'your dealership';
+
+      try {
+        await sendMemberApplicationSubmittedEmail({
+          to: application.member.email,
+          firstName: application.member.firstName,
+          type: 'dealership',
+          title: companyName,
+        });
+      } catch (emailError) {
+        console.error('[R&P dealership] application saved but member confirmation email failed', {
+          applicationId: application.id,
           error: emailError,
         });
       }
