@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { formatAccountNumberDisplay } from '../lib/rp-account';
+import { geocodeFuelLocation } from '../services/geocoding.service';
 
 const PENDING_DEALERSHIP_STATUSES = ['NEW', 'UNDER_REVIEW'];
 const PENDING_CAREER_STATUSES = ['NEW', 'UNDER_REVIEW', 'INTERVIEW'];
@@ -123,14 +124,22 @@ export const rpAdminController = {
       if (!state || !city || !address) {
         return res.status(400).json({ error: 'State, city, and address are required' });
       }
+
+      const locationData = {
+        state: String(state).trim(),
+        city: String(city).trim(),
+        address: String(address).trim(),
+        name: name?.trim() || null,
+        phone: phone?.trim() || null,
+        isActive: isActive !== false,
+      };
+
+      const coords = await geocodeFuelLocation(locationData);
+
       const location = await prisma.rpFuelLocation.create({
         data: {
-          state: String(state).trim(),
-          city: String(city).trim(),
-          address: String(address).trim(),
-          name: name?.trim() || null,
-          phone: phone?.trim() || null,
-          isActive: isActive !== false,
+          ...locationData,
+          ...(coords && { latitude: coords.latitude, longitude: coords.longitude }),
         },
       });
       res.status(201).json({ location });
@@ -143,20 +152,83 @@ export const rpAdminController = {
     try {
       const { id } = req.params;
       const { state, city, address, name, phone, isActive } = req.body;
+
+      const existing = await prisma.rpFuelLocation.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: 'Location not found' });
+      }
+
+      const nextState = state !== undefined ? String(state).trim() : existing.state;
+      const nextCity = city !== undefined ? String(city).trim() : existing.city;
+      const nextAddress = address !== undefined ? String(address).trim() : existing.address;
+      const addressChanged =
+        nextState !== existing.state || nextCity !== existing.city || nextAddress !== existing.address;
+
+      let coords: { latitude: number; longitude: number } | null = null;
+      if (addressChanged) {
+        coords = await geocodeFuelLocation({
+          state: nextState,
+          city: nextCity,
+          address: nextAddress,
+        });
+      }
+
       const location = await prisma.rpFuelLocation.update({
         where: { id },
         data: {
-          ...(state !== undefined && { state: String(state).trim() }),
-          ...(city !== undefined && { city: String(city).trim() }),
-          ...(address !== undefined && { address: String(address).trim() }),
+          ...(state !== undefined && { state: nextState }),
+          ...(city !== undefined && { city: nextCity }),
+          ...(address !== undefined && { address: nextAddress }),
           ...(name !== undefined && { name: name?.trim() || null }),
           ...(phone !== undefined && { phone: phone?.trim() || null }),
           ...(isActive !== undefined && { isActive: !!isActive }),
+          ...(addressChanged && {
+            latitude: coords?.latitude ?? null,
+            longitude: coords?.longitude ?? null,
+          }),
         },
       });
       res.json({ location });
     } catch (error: any) {
       res.status(400).json({ error: error.message || 'Failed to update location' });
+    }
+  },
+
+  async geocodeMissingLocations(_req: Request, res: Response) {
+    try {
+      const missing = await prisma.rpFuelLocation.findMany({
+        where: {
+          OR: [{ latitude: null }, { longitude: null }],
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      let geocoded = 0;
+      for (const location of missing) {
+        const coords = await geocodeFuelLocation({
+          address: location.address,
+          city: location.city,
+          state: location.state,
+        });
+        if (!coords) continue;
+
+        await prisma.rpFuelLocation.update({
+          where: { id: location.id },
+          data: {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          },
+        });
+        geocoded += 1;
+      }
+
+      res.json({
+        scanned: missing.length,
+        geocoded,
+        remaining: missing.length - geocoded,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to geocode locations' });
     }
   },
 

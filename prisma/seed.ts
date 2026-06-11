@@ -113,9 +113,30 @@ async function main() {
   console.log('R&P admin: admin@randpglobalenergies.com / rpadmin123');
 
   const sampleLocations = [
-    { state: 'Texas', city: 'Houston', address: '1200 Main St', name: 'R&P Fuel — Downtown' },
-    { state: 'Texas', city: 'Dallas', address: '450 Commerce St', name: 'R&P Fuel — Dallas' },
-    { state: 'California', city: 'Los Angeles', address: '800 Sunset Blvd', name: 'R&P Fuel — LA' },
+    {
+      state: 'Texas',
+      city: 'Houston',
+      address: '1200 Main St',
+      name: 'R&P Fuel — Downtown',
+      latitude: 29.7604,
+      longitude: -95.3698,
+    },
+    {
+      state: 'Texas',
+      city: 'Dallas',
+      address: '450 Commerce St',
+      name: 'R&P Fuel — Dallas',
+      latitude: 32.7801,
+      longitude: -96.804,
+    },
+    {
+      state: 'California',
+      city: 'Los Angeles',
+      address: '800 Sunset Blvd',
+      name: 'R&P Fuel — LA',
+      latitude: 34.098,
+      longitude: -118.3273,
+    },
   ];
   for (const loc of sampleLocations) {
     const existing = await prisma.rpFuelLocation.findFirst({
@@ -123,6 +144,15 @@ async function main() {
     });
     if (!existing) {
       await prisma.rpFuelLocation.create({ data: loc });
+    } else {
+      await prisma.rpFuelLocation.update({
+        where: { id: existing.id },
+        data: {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          name: loc.name,
+        },
+      });
     }
   }
   console.log('R&P sample fuel locations created');

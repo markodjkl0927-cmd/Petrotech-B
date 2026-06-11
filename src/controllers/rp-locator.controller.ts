@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 
+function sendLocatorJson(res: Response, body: unknown) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.json(body);
+}
+
 export const rpLocatorController = {
   async listStates(_req: Request, res: Response) {
     try {
@@ -10,7 +15,7 @@ export const rpLocatorController = {
         distinct: ['state'],
         orderBy: { state: 'asc' },
       });
-      res.json({ states: rows.map((r) => r.state) });
+      sendLocatorJson(res, { states: rows.map((r) => r.state) });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to load states' });
     }
@@ -28,7 +33,7 @@ export const rpLocatorController = {
         distinct: ['city'],
         orderBy: { city: 'asc' },
       });
-      res.json({ cities: rows.map((r) => r.city) });
+      sendLocatorJson(res, { cities: rows.map((r) => r.city) });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to load cities' });
     }
@@ -45,7 +50,7 @@ export const rpLocatorController = {
         where: { isActive: true, state, city },
         orderBy: [{ name: 'asc' }, { address: 'asc' }],
       });
-      res.json({ locations });
+      sendLocatorJson(res, { locations });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to load locations' });
     }

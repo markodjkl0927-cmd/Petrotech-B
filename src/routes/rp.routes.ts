@@ -96,6 +96,7 @@ router.use('/admin', authenticate, authorize('RP_ADMIN'));
 router.get('/admin/dashboard/stats', rpAdminController.getDashboardStats);
 router.get('/admin/locations', rpAdminController.listLocations);
 router.post('/admin/locations', rpAdminController.createLocation);
+router.post('/admin/locations/geocode-missing', rpAdminController.geocodeMissingLocations);
 router.put('/admin/locations/:id', rpAdminController.updateLocation);
 router.delete('/admin/locations/:id', rpAdminController.deleteLocation);
 

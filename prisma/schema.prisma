@@ -390,6 +390,8 @@ model RpFuelLocation {
   address   String
   name      String?
   phone     String?
+  latitude  Float?
+  longitude Float?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
